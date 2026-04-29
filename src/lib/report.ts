@@ -65,49 +65,55 @@ export function generateReport(
   }
 
   .page {
-    max-width: 760px;
-    margin: 0 auto;
-    padding: 64px 64px 80px;
+    width: 100%;
+    max-width: 100%;
+    padding: 0;
   }
 
   /* Cover */
   .cover {
-    margin-bottom: 52px;
-    padding-bottom: 32px;
-    border-bottom: 2px solid #1a1a1a;
+    background: #1a1a1a;
+    color: #f5f5f5;
+    padding: 48px 64px 40px;
+    margin-bottom: 0;
   }
 
   .cover-eyebrow {
     font-size: 9px;
-    letter-spacing: 0.14em;
-    color: #aaa;
+    letter-spacing: 0.18em;
+    color: #888;
     text-transform: uppercase;
-    margin-bottom: 10px;
+    margin-bottom: 14px;
   }
 
   .cover-title {
-    font-size: 26px;
+    font-size: 28px;
     font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     line-height: 1.1;
-    margin-bottom: 10px;
+    margin-bottom: 8px;
+    color: #fff;
   }
 
   .cover-session {
     font-size: 13px;
-    color: #555;
+    color: #aaa;
     margin-bottom: 6px;
   }
 
   .cover-meta {
     font-size: 10px;
-    color: #aaa;
-    margin-top: 20px;
-    padding-top: 18px;
-    border-top: 1px solid #e5e5e5;
+    color: #666;
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 1px solid #333;
     display: flex;
     gap: 28px;
+  }
+
+  .incidents-wrap {
+    padding: 40px 64px 80px;
   }
 
   /* Incidents */
@@ -197,10 +203,12 @@ export function generateReport(
   }
 
   @media print {
-    .page { padding: 0; }
+    .page { width: 100%; max-width: 100%; }
+    .cover { padding: 40px 48px 32px; }
+    .incidents-wrap { padding: 32px 48px 60px; }
     body { font-size: 10.5px; }
     .incident { page-break-inside: avoid; }
-    @page { margin: 0.8in 0.9in; size: letter; }
+    @page { margin: 0; size: letter; }
   }
 </style>
 </head>
@@ -217,7 +225,9 @@ export function generateReport(
     </div>
   </div>
 
-  ${incidentBlocks}
+  <div class="incidents-wrap">
+    ${incidentBlocks}
+  </div>
 
 </div>
 <script>window.onload = () => { window.print(); };<\/script>
