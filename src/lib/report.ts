@@ -61,7 +61,7 @@ export function generateReport(
     background: #ffffff;
     color: #1a1a1a;
     font-family: 'JetBrains Mono', 'Courier New', monospace;
-    font-size: 14px;
+    font-size: 17px;
     line-height: 1.6;
   }
 
@@ -80,7 +80,7 @@ export function generateReport(
   }
 
   .cover-eyebrow {
-    font-size: 11px;
+    font-size: 14px;
     letter-spacing: 0.18em;
     color: #888;
     text-transform: uppercase;
@@ -88,7 +88,7 @@ export function generateReport(
   }
 
   .cover-title {
-    font-size: 32px;
+    font-size: 35px;
     font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
@@ -98,13 +98,13 @@ export function generateReport(
   }
 
   .cover-session {
-    font-size: 16px;
+    font-size: 19px;
     color: #aaa;
     margin-bottom: 6px;
   }
 
   .cover-meta {
-    font-size: 12px;
+    font-size: 15px;
     color: #666;
     margin-top: 24px;
     padding-top: 20px;
@@ -128,7 +128,7 @@ export function generateReport(
   }
 
   .inc-number {
-    font-size: 11px;
+    font-size: 14px;
     font-weight: 700;
     color: #ccc;
     letter-spacing: 0.1em;
@@ -151,13 +151,13 @@ export function generateReport(
   }
 
   .inc-room {
-    font-size: 18px;
+    font-size: 21px;
     font-weight: 700;
     color: #111;
   }
 
   .inc-cat {
-    font-size: 11px;
+    font-size: 14px;
     font-weight: 700;
     letter-spacing: 0.1em;
     text-transform: uppercase;
@@ -169,14 +169,14 @@ export function generateReport(
   }
 
   .inc-time {
-    font-size: 12px;
+    font-size: 15px;
     color: #aaa;
     white-space: nowrap;
     flex-shrink: 0;
   }
 
   .inc-desc {
-    font-size: 15px;
+    font-size: 18px;
     color: #333;
     line-height: 1.75;
     font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -207,7 +207,7 @@ export function generateReport(
     .page { width: 100%; max-width: 100%; }
     .cover { padding: 40px 48px 32px; }
     .incidents-wrap { padding: 32px 48px 60px; }
-    body { font-size: 12px; }
+    body { font-size: 15px; }
     .incident { page-break-inside: avoid; }
     @page { margin: 0; size: letter; }
   }
