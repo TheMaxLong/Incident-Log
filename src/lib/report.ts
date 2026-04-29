@@ -50,6 +50,7 @@ export function generateReport(
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Incident Report — ${sessionName}</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
@@ -60,7 +61,7 @@ export function generateReport(
     background: #ffffff;
     color: #1a1a1a;
     font-family: 'JetBrains Mono', 'Courier New', monospace;
-    font-size: 11px;
+    font-size: 14px;
     line-height: 1.6;
   }
 
@@ -79,7 +80,7 @@ export function generateReport(
   }
 
   .cover-eyebrow {
-    font-size: 9px;
+    font-size: 11px;
     letter-spacing: 0.18em;
     color: #888;
     text-transform: uppercase;
@@ -87,7 +88,7 @@ export function generateReport(
   }
 
   .cover-title {
-    font-size: 28px;
+    font-size: 32px;
     font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
@@ -97,13 +98,13 @@ export function generateReport(
   }
 
   .cover-session {
-    font-size: 13px;
+    font-size: 16px;
     color: #aaa;
     margin-bottom: 6px;
   }
 
   .cover-meta {
-    font-size: 10px;
+    font-size: 12px;
     color: #666;
     margin-top: 24px;
     padding-top: 20px;
@@ -127,7 +128,7 @@ export function generateReport(
   }
 
   .inc-number {
-    font-size: 9px;
+    font-size: 11px;
     font-weight: 700;
     color: #ccc;
     letter-spacing: 0.1em;
@@ -150,32 +151,32 @@ export function generateReport(
   }
 
   .inc-room {
-    font-size: 15px;
+    font-size: 18px;
     font-weight: 700;
     color: #111;
   }
 
   .inc-cat {
-    font-size: 9px;
+    font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.1em;
     text-transform: uppercase;
     color: #777;
     background: #f4f4f2;
-    padding: 3px 9px;
+    padding: 4px 10px;
     border-radius: 2px;
     white-space: nowrap;
   }
 
   .inc-time {
-    font-size: 10px;
+    font-size: 12px;
     color: #aaa;
     white-space: nowrap;
     flex-shrink: 0;
   }
 
   .inc-desc {
-    font-size: 12px;
+    font-size: 15px;
     color: #333;
     line-height: 1.75;
     font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -206,7 +207,7 @@ export function generateReport(
     .page { width: 100%; max-width: 100%; }
     .cover { padding: 40px 48px 32px; }
     .incidents-wrap { padding: 32px 48px 60px; }
-    body { font-size: 10.5px; }
+    body { font-size: 12px; }
     .incident { page-break-inside: avoid; }
     @page { margin: 0; size: letter; }
   }
