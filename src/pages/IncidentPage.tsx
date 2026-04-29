@@ -34,7 +34,7 @@ function nowTime() {
   return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
 }
 
-interface PendingPhoto { id: string; name: string; dataUrl: string; }
+interface PendingPhoto { id: string; name: string; dataUrl: string; isExisting?: boolean; }
 
 const inputStyle: React.CSSProperties = {
   background: "#0a0a0a", border: "1px solid #1e293b", borderRadius: "4px",
@@ -54,11 +54,12 @@ const labelStyle: React.CSSProperties = {
 };
 
 function IncidentCard({
-  incident, photos, onDelete,
+  incident, photos, onDelete, onEdit,
 }: {
   incident: Incident;
   photos: string[];
   onDelete: () => void;
+  onEdit: () => void;
 }) {
   return (
     <div style={{ background: "#0f1117", border: "1px solid #1e293b", borderRadius: "6px", padding: "14px 16px" }}>
@@ -76,6 +77,11 @@ function IncidentCard({
         </div>
         <div style={{ display: "flex", gap: "10px", alignItems: "center", flexShrink: 0 }}>
           <span style={{ color: "#475569", fontSize: "10px", whiteSpace: "nowrap" }}>{incident.date} {incident.time}</span>
+          <button
+            onClick={onEdit}
+            title="Edit incident"
+            style={{ background: "none", border: "none", color: "#475569", fontSize: "13px", cursor: "pointer", padding: "0 2px", lineHeight: 1 }}
+          >✎</button>
           <button
             onClick={onDelete}
             style={{ background: "none", border: "none", color: "#334155", fontSize: "14px", cursor: "pointer", padding: "0 2px", lineHeight: 1 }}
@@ -105,7 +111,6 @@ interface Props {
 }
 
 export default function IncidentPage({ session, onBack }: Props) {
-  // Form
   const [date, setDate] = useState(nowDate);
   const [time, setTime] = useState(nowTime);
   const [building, setBuilding] = useState<Building | "">("");
@@ -115,7 +120,8 @@ export default function IncidentPage({ session, onBack }: Props) {
   const [desc, setDesc] = useState("");
   const [pendingPhotos, setPendingPhotos] = useState<PendingPhoto[]>([]);
 
-  // Page
+  const [editingId, setEditingId] = useState<string | null>(null);
+
   const [incidents, setIncidents] = useState<Incident[]>(() =>
     getIncidents(session.id).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
   );
@@ -124,6 +130,7 @@ export default function IncidentPage({ session, onBack }: Props) {
   const [compiling, setCompiling] = useState(false);
 
   const fileRef = useRef<HTMLInputElement>(null);
+  const formRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const ids = incidents.flatMap(i => i.photoIds);
@@ -160,17 +167,70 @@ export default function IncidentPage({ session, onBack }: Props) {
     setPendingPhotos(prev => [...prev, ...processed]);
   };
 
+  const startEdit = (incident: Incident) => {
+    setEditingId(incident.id);
+    setDate(incident.date);
+    setTime(incident.time);
+    setBuilding((incident.building as Building) || "");
+    setRoom(incident.room || "");
+
+    const isPreset = (CATEGORY_PRESETS as readonly string[]).includes(incident.category);
+    if (isPreset) {
+      setCategory(incident.category);
+      setOtherText("");
+    } else {
+      setCategory("Other");
+      setOtherText(incident.category);
+    }
+
+    setDesc(incident.description);
+
+    // Load existing photos into pending so they display in the form
+    const existing: PendingPhoto[] = incident.photoIds.map(id => ({
+      id,
+      name: id,
+      dataUrl: photoCache[id] ?? "",
+      isExisting: true,
+    }));
+    setPendingPhotos(existing);
+
+    formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setDate(nowDate());
+    setTime(nowTime());
+    setBuilding("");
+    setRoom("");
+    setCategory("");
+    setOtherText("");
+    setDesc("");
+    setPendingPhotos([]);
+  };
+
   const resolvedCategory = category === "Other" ? otherText.trim() || "Other" : category;
-  const canLog = !!(building || true) && !!category && (category !== "Other" || otherText.trim()) && desc.trim();
+  const canLog = !!category && (category !== "Other" || otherText.trim()) && desc.trim();
 
   const log = async () => {
     if (!canLog || logging) return;
     setLogging(true);
 
-    await Promise.all(pendingPhotos.map(p => savePhoto(p.id, p.dataUrl)));
+    const originalInc = editingId ? incidents.find(i => i.id === editingId) : null;
+
+    // Photos that were in the original but removed during edit
+    if (originalInc) {
+      const keptIds = new Set(pendingPhotos.filter(p => p.isExisting).map(p => p.id));
+      const toDelete = originalInc.photoIds.filter(id => !keptIds.has(id));
+      if (toDelete.length) await deletePhotos(toDelete);
+    }
+
+    // Save only newly added photos (not existing ones)
+    const newPhotos = pendingPhotos.filter(p => !p.isExisting);
+    await Promise.all(newPhotos.map(p => savePhoto(p.id, p.dataUrl)));
 
     const incident: Incident = {
-      id: `inc_${Date.now()}`,
+      id: editingId ?? `inc_${Date.now()}`,
       sessionId: session.id,
       date, time,
       building,
@@ -178,7 +238,7 @@ export default function IncidentPage({ session, onBack }: Props) {
       category: resolvedCategory,
       description: desc.trim(),
       photoIds: pendingPhotos.map(p => p.id),
-      createdAt: new Date().toISOString(),
+      createdAt: originalInc?.createdAt ?? new Date().toISOString(),
     };
 
     saveIncident(incident);
@@ -187,15 +247,18 @@ export default function IncidentPage({ session, onBack }: Props) {
     updateSession(session.id, { incidentCount: updated.length });
 
     const newCache = { ...photoCache };
-    pendingPhotos.forEach(p => { newCache[p.id] = p.dataUrl; });
+    newPhotos.forEach(p => { newCache[p.id] = p.dataUrl; });
     setPhotoCache(newCache);
 
     setIncidents(updated.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
 
-    // Reset form — keep building/room/category for next entry
-    setTime(nowTime());
-    setDesc("");
-    setPendingPhotos([]);
+    if (editingId) {
+      cancelEdit();
+    } else {
+      setTime(nowTime());
+      setDesc("");
+      setPendingPhotos([]);
+    }
     setLogging(false);
   };
 
@@ -204,6 +267,7 @@ export default function IncidentPage({ session, onBack }: Props) {
     if (!inc) return;
     if (inc.photoIds.length) await deletePhotos(inc.photoIds);
     removeIncident(id);
+    if (editingId === id) cancelEdit();
     const updated = getIncidents(session.id);
     updateSession(session.id, { incidentCount: updated.length });
     setIncidents(updated.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
@@ -217,6 +281,8 @@ export default function IncidentPage({ session, onBack }: Props) {
     generateReport(incidents, session.name, photos);
     setCompiling(false);
   };
+
+  const isEditing = editingId !== null;
 
   return (
     <div style={{ background: "#0a0a0a", minHeight: "100vh", fontFamily: M, color: "#e2e8f0", padding: "28px 20px" }}>
@@ -244,9 +310,28 @@ export default function IncidentPage({ session, onBack }: Props) {
           )}
         </div>
 
-        {/* NEW INCIDENT FORM */}
-        <div style={{ background: "#0f1117", border: "1px solid #1e293b", borderRadius: "8px", padding: "20px", marginBottom: "32px" }}>
-          <div style={{ color: "#334155", fontSize: "10px", letterSpacing: "0.1em", marginBottom: "18px" }}>NEW INCIDENT</div>
+        {/* FORM */}
+        <div
+          ref={formRef}
+          style={{
+            background: "#0f1117",
+            border: `1px solid ${isEditing ? "#7dd3fc44" : "#1e293b"}`,
+            borderRadius: "8px",
+            padding: "20px",
+            marginBottom: "32px",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "18px" }}>
+            <div style={{ color: isEditing ? "#7dd3fc" : "#334155", fontSize: "10px", letterSpacing: "0.1em" }}>
+              {isEditing ? "EDITING INCIDENT" : "NEW INCIDENT"}
+            </div>
+            {isEditing && (
+              <button
+                onClick={cancelEdit}
+                style={{ background: "none", border: "none", color: "#475569", fontFamily: M, fontSize: "10px", cursor: "pointer", letterSpacing: "0.06em" }}
+              >CANCEL</button>
+            )}
+          </div>
 
           {/* Date + Time */}
           <div style={{ display: "flex", gap: "10px", marginBottom: "14px" }}>
@@ -332,9 +417,12 @@ export default function IncidentPage({ session, onBack }: Props) {
                 {pendingPhotos.map(p => (
                   <div key={p.id} style={{ position: "relative" }}>
                     <img
-                      src={p.dataUrl} alt={p.name}
-                      style={{ width: "80px", height: "60px", objectFit: "cover", borderRadius: "4px", border: "1px solid #1e293b", display: "block" }}
+                      src={p.dataUrl || photoCache[p.id] || ""} alt={p.name}
+                      style={{ width: "80px", height: "60px", objectFit: "cover", borderRadius: "4px", border: `1px solid ${p.isExisting ? "#334155" : "#1e293b"}`, display: "block" }}
                     />
+                    {p.isExisting && (
+                      <div style={{ position: "absolute", bottom: "2px", left: "2px", background: "#0a0a0a99", borderRadius: "2px", padding: "1px 4px", fontSize: "8px", color: "#64748b" }}>saved</div>
+                    )}
                     <button
                       onClick={() => setPendingPhotos(prev => prev.filter(x => x.id !== p.id))}
                       style={{ position: "absolute", top: "-7px", right: "-7px", background: "#0a0a0a", border: "1px solid #334155", borderRadius: "50%", width: "18px", height: "18px", color: "#94a3b8", fontSize: "10px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1, padding: 0 }}
@@ -352,14 +440,16 @@ export default function IncidentPage({ session, onBack }: Props) {
             <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={e => { handleFiles(e.target.files); e.target.value = ""; }} />
           </div>
 
-          {/* Log button */}
-          <button
-            onClick={log}
-            disabled={!canLog || logging}
-            style={{ background: canLog && !logging ? "#7dd3fc" : "#1e293b", color: canLog && !logging ? "#0a0a0a" : "#475569", border: "none", borderRadius: "6px", padding: "10px 24px", fontFamily: M, fontSize: "12px", fontWeight: "bold", cursor: canLog && !logging ? "pointer" : "not-allowed", letterSpacing: "0.06em" }}
-          >
-            {logging ? "LOGGING…" : "LOG INCIDENT"}
-          </button>
+          {/* Submit button */}
+          <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+            <button
+              onClick={log}
+              disabled={!canLog || logging}
+              style={{ background: canLog && !logging ? "#7dd3fc" : "#1e293b", color: canLog && !logging ? "#0a0a0a" : "#475569", border: "none", borderRadius: "6px", padding: "10px 24px", fontFamily: M, fontSize: "12px", fontWeight: "bold", cursor: canLog && !logging ? "pointer" : "not-allowed", letterSpacing: "0.06em" }}
+            >
+              {logging ? (isEditing ? "SAVING…" : "LOGGING…") : (isEditing ? "SAVE CHANGES" : "LOG INCIDENT")}
+            </button>
+          </div>
         </div>
 
         {/* Shift log */}
@@ -385,6 +475,7 @@ export default function IncidentPage({ session, onBack }: Props) {
                   incident={inc}
                   photos={inc.photoIds.map(id => photoCache[id]).filter(Boolean) as string[]}
                   onDelete={() => deleteInc(inc.id)}
+                  onEdit={() => startEdit(inc)}
                 />
               ))}
             </div>
