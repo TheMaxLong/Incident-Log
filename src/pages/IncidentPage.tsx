@@ -62,7 +62,13 @@ function IncidentCard({
   onEdit: () => void;
 }) {
   return (
-    <div style={{ background: "#0f1117", border: "1px solid #1e293b", borderRadius: "6px", padding: "14px 16px" }}>
+    <div style={{
+      background: "#0f1117",
+      border: incident.urgent ? "1px solid #7f1d1d" : "1px solid #1e293b",
+      borderLeft: incident.urgent ? "3px solid #dc2626" : "1px solid #1e293b",
+      borderRadius: "6px",
+      padding: "14px 16px",
+    }}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: "8px", gap: "12px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
           <span style={{ color: "#7dd3fc", fontSize: "12px", fontWeight: "700" }}>
@@ -71,6 +77,11 @@ function IncidentCard({
           <span style={{ background: "#1e293b", borderRadius: "3px", padding: "2px 8px", fontSize: "9px", color: "#94a3b8", letterSpacing: "0.06em", whiteSpace: "nowrap" }}>
             {incident.category}
           </span>
+          {incident.urgent && (
+            <span style={{ background: "#1a0000", border: "1px solid #7f1d1d", borderRadius: "3px", padding: "2px 7px", fontSize: "9px", color: "#dc2626", letterSpacing: "0.08em", whiteSpace: "nowrap", fontWeight: "700" }}>
+              URGENT **
+            </span>
+          )}
           {photos.length > 0 && (
             <span style={{ fontSize: "10px", color: "#475569" }}>📷 {photos.length}</span>
           )}
@@ -119,11 +130,19 @@ export default function IncidentPage({ session, onBack }: Props) {
   const [otherText, setOtherText] = useState("");
   const [desc, setDesc] = useState("");
   const [pendingPhotos, setPendingPhotos] = useState<PendingPhoto[]>([]);
+  const [urgent, setUrgent] = useState(false);
 
   const [editingId, setEditingId] = useState<string | null>(null);
 
+  const sortIncidents = (list: Incident[]) =>
+    [...list].sort((a, b) => {
+      if (a.urgent && !b.urgent) return -1;
+      if (!a.urgent && b.urgent) return 1;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+
   const [incidents, setIncidents] = useState<Incident[]>(() =>
-    getIncidents(session.id).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    sortIncidents(getIncidents(session.id))
   );
   const [photoCache, setPhotoCache] = useState<Record<string, string>>({});
   const [logging, setLogging] = useState(false);
@@ -184,6 +203,7 @@ export default function IncidentPage({ session, onBack }: Props) {
     }
 
     setDesc(incident.description);
+    setUrgent(incident.urgent ?? false);
 
     // Load existing photos into pending so they display in the form
     const existing: PendingPhoto[] = incident.photoIds.map(id => ({
@@ -207,6 +227,7 @@ export default function IncidentPage({ session, onBack }: Props) {
     setOtherText("");
     setDesc("");
     setPendingPhotos([]);
+    setUrgent(false);
   };
 
   const resolvedCategory = category === "Other" ? otherText.trim() || "Other" : category;
@@ -239,6 +260,7 @@ export default function IncidentPage({ session, onBack }: Props) {
       description: desc.trim(),
       photoIds: pendingPhotos.map(p => p.id),
       createdAt: originalInc?.createdAt ?? new Date().toISOString(),
+      urgent,
     };
 
     saveIncident(incident);
@@ -250,7 +272,7 @@ export default function IncidentPage({ session, onBack }: Props) {
     newPhotos.forEach(p => { newCache[p.id] = p.dataUrl; });
     setPhotoCache(newCache);
 
-    setIncidents(updated.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+    setIncidents(sortIncidents(updated));
 
     if (editingId) {
       cancelEdit();
@@ -258,6 +280,7 @@ export default function IncidentPage({ session, onBack }: Props) {
       setTime(nowTime());
       setDesc("");
       setPendingPhotos([]);
+      setUrgent(false);
     }
     setLogging(false);
   };
@@ -270,7 +293,7 @@ export default function IncidentPage({ session, onBack }: Props) {
     if (editingId === id) cancelEdit();
     const updated = getIncidents(session.id);
     updateSession(session.id, { incidentCount: updated.length });
-    setIncidents(updated.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+    setIncidents(sortIncidents(updated));
   };
 
   const compile = async () => {
@@ -441,13 +464,30 @@ export default function IncidentPage({ session, onBack }: Props) {
           </div>
 
           {/* Submit button */}
-          <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+          <div style={{ display: "flex", gap: "10px", alignItems: "center", justifyContent: "space-between" }}>
             <button
               onClick={log}
               disabled={!canLog || logging}
               style={{ background: canLog && !logging ? "#7dd3fc" : "#1e293b", color: canLog && !logging ? "#0a0a0a" : "#475569", border: "none", borderRadius: "6px", padding: "10px 24px", fontFamily: M, fontSize: "12px", fontWeight: "bold", cursor: canLog && !logging ? "pointer" : "not-allowed", letterSpacing: "0.06em" }}
             >
               {logging ? (isEditing ? "SAVING…" : "LOGGING…") : (isEditing ? "SAVE CHANGES" : "LOG INCIDENT")}
+            </button>
+            <button
+              onClick={() => setUrgent(u => !u)}
+              style={{
+                background: urgent ? "#1a0000" : "transparent",
+                color: urgent ? "#dc2626" : "#475569",
+                border: urgent ? "1px solid #dc2626" : "1px solid #334155",
+                borderRadius: "6px",
+                padding: "10px 16px",
+                fontFamily: M,
+                fontSize: "11px",
+                fontWeight: urgent ? "bold" : "normal",
+                cursor: "pointer",
+                letterSpacing: "0.06em",
+              }}
+            >
+              URGENT **
             </button>
           </div>
         </div>

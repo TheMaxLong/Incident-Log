@@ -18,6 +18,7 @@ export interface Incident {
   description: string;
   photoIds: string[];
   createdAt: string;    // ISO — used for chronological sort
+  urgent?: boolean;
 }
 
 export interface Archive {

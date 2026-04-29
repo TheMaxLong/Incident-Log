@@ -5,9 +5,11 @@ export function generateReport(
   sessionName: string,
   photos: Record<string, string>
 ): void {
-  const sorted = [...incidents].sort(
-    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-  );
+  const sorted = [...incidents].sort((a, b) => {
+    if (a.urgent && !b.urgent) return -1;
+    if (!a.urgent && b.urgent) return 1;
+    return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+  });
 
   const incidentBlocks = sorted
     .map((inc, idx) => {
@@ -25,8 +27,8 @@ export function generateReport(
         .join("");
 
       return `
-        <div class="incident">
-          <div class="inc-number">#${String(idx + 1).padStart(2, "0")}</div>
+        <div class="incident${inc.urgent ? " urgent" : ""}">
+          <div class="inc-number${inc.urgent ? " urgent-num" : ""}">${inc.urgent ? "⚑ " : ""}#${String(idx + 1).padStart(2, "0")}${inc.urgent ? " URGENT **" : ""}</div>
           <div class="inc-header">
             <div class="inc-left">
               <span class="inc-room">${room}</span>
@@ -193,8 +195,8 @@ export function generateReport(
   .photo-wrap { flex: 0 0 auto; }
 
   .photo {
-    max-width: 200px;
-    max-height: 150px;
+    max-width: 260px;
+    max-height: 195px;
     width: auto;
     height: auto;
     object-fit: cover;
@@ -203,11 +205,24 @@ export function generateReport(
     display: block;
   }
 
+  .incident.urgent {
+    border-left: 4px solid #dc2626;
+    padding-left: 16px;
+    margin-left: -16px;
+  }
+
+  .inc-number.urgent-num {
+    color: #dc2626;
+    font-size: 13px;
+  }
+
   @media print {
     .page { width: 100%; max-width: 100%; }
     .cover { padding: 40px 48px 32px; }
     .incidents-wrap { padding: 32px 48px 60px; }
-    body { font-size: 15px; }
+    body { font-size: 13pt; }
+    .inc-room { font-size: 16pt !important; }
+    .inc-desc { font-size: 13pt !important; }
     .incident { page-break-inside: avoid; }
     @page { margin: 0; size: letter; }
   }
