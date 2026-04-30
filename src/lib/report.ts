@@ -147,6 +147,11 @@ export function generateReport(
     padding-top: 20px;
   }
 
+  .first-incident-wrap .photo {
+    max-width: 430px;
+    max-height: 322px;
+  }
+
   /* Incidents */
   .incident {
     padding: 28px 0;
