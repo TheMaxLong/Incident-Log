@@ -60,13 +60,17 @@ export function generateReport(
           ${photoHtml ? `<div class="photos">${photoHtml}</div>` : ""}
         </div>
       `;
-    })
-    .join("");
+    });
+
+  const firstIncidentBlock = incidentBlocks[0] ?? "";
+  const remainingIncidentBlocks = incidentBlocks.slice(1).join("");
 
   const generatedAt = new Date().toLocaleString("en-US", {
     month: "short", day: "numeric", year: "numeric",
     hour: "2-digit", minute: "2-digit",
   });
+
+  const isLongReport = sorted.length >= 15;
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -137,6 +141,10 @@ export function generateReport(
 
   .incidents-wrap {
     padding: 40px 64px 80px;
+  }
+
+  .first-incident-wrap {
+    padding-top: 20px;
   }
 
   /* Incidents */
@@ -238,35 +246,49 @@ export function generateReport(
 
   @media print {
     .page { width: 100%; max-width: 100%; }
-    .cover { padding: 40px 48px 32px; }
-    .incidents-wrap { padding: 32px 48px 60px; }
+    .cover { padding: 30px 40px 24px; }
+    .incidents-wrap { padding: 24px 40px 48px; }
+    .first-page-block { page-break-inside: avoid; break-inside: avoid-page; }
+    .first-incident-wrap { padding-top: 12px; }
     body { font-size: 17pt; }
     .inc-room { font-size: 21pt !important; }
     .inc-cat { font-size: 13pt !important; }
     .inc-time { font-size: 14pt !important; }
     .inc-desc { font-size: 17pt !important; }
     .inc-number { font-size: 13pt !important; }
-    .incident { page-break-inside: avoid; }
+    .incident { page-break-inside: avoid; break-inside: avoid-page; }
+    .long-report .incidents-wrap:not(.first-incident-wrap) { padding: 18px 34px 40px; }
+    .long-report .incidents-wrap:not(.first-incident-wrap) .incident { padding: 20px 0; }
+    .long-report .incidents-wrap:not(.first-incident-wrap) .inc-desc {
+      font-size: 15pt !important;
+      line-height: 1.62;
+    }
+    .long-report .incidents-wrap:not(.first-incident-wrap) .photo {
+      max-width: 320px;
+      max-height: 240px;
+    }
     @page { margin: 12mm; }
   }
 </style>
 </head>
-<body>
+<body class="${isLongReport ? "long-report" : ""}">
 <div class="page">
 
-  <div class="cover">
-    <div class="cover-eyebrow">Cultivation Facility — Incident Report</div>
-    <div class="cover-title">Shift Log</div>
-    <div class="cover-session">${escapeHtml(sessionName)}</div>
-    <div class="cover-meta">
-      <span>${sorted.length} incident${sorted.length !== 1 ? "s" : ""} · chronological order</span>
-      <span>Generated ${generatedAt}</span>
+  <div class="first-page-block">
+    <div class="cover">
+      <div class="cover-eyebrow">Cultivation Facility — Incident Report</div>
+      <div class="cover-title">Shift Log</div>
+      <div class="cover-session">${escapeHtml(sessionName)}</div>
+      <div class="cover-meta">
+        <span>${sorted.length} incident${sorted.length !== 1 ? "s" : ""} · chronological order</span>
+        <span>Generated ${generatedAt}</span>
+      </div>
     </div>
+
+    ${firstIncidentBlock ? `<div class="incidents-wrap first-incident-wrap">${firstIncidentBlock}</div>` : ""}
   </div>
 
-  <div class="incidents-wrap">
-    ${incidentBlocks}
-  </div>
+  ${remainingIncidentBlocks ? `<div class="incidents-wrap">${remainingIncidentBlocks}</div>` : ""}
 
 </div>
 <script>window.onload = () => { window.print(); };<\/script>
