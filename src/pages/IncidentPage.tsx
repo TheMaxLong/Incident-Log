@@ -34,6 +34,20 @@ function nowTime() {
   return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
 }
 
+function isValidDateText(value: string): boolean {
+  if (!/^\d{2}\/\d{2}\/\d{4}$/.test(value)) return false;
+  const [m, d, y] = value.split("/").map(Number);
+  if (!m || !d || !y) return false;
+  const parsed = new Date(y, m - 1, d);
+  return parsed.getFullYear() === y && parsed.getMonth() === m - 1 && parsed.getDate() === d;
+}
+
+function isValidTimeText(value: string): boolean {
+  if (!/^\d{2}:\d{2}$/.test(value)) return false;
+  const [h, m] = value.split(":").map(Number);
+  return h >= 0 && h <= 23 && m >= 0 && m <= 59;
+}
+
 interface PendingPhoto { id: string; name: string; dataUrl: string; isExisting?: boolean; }
 
 const inputStyle: React.CSSProperties = {
@@ -147,6 +161,7 @@ export default function IncidentPage({ session, onBack }: Props) {
   const [photoCache, setPhotoCache] = useState<Record<string, string>>({});
   const [logging, setLogging] = useState(false);
   const [compiling, setCompiling] = useState(false);
+  const [actionError, setActionError] = useState("");
 
   const fileRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLDivElement>(null);
@@ -154,7 +169,9 @@ export default function IncidentPage({ session, onBack }: Props) {
   useEffect(() => {
     const ids = incidents.flatMap(i => i.photoIds);
     if (!ids.length) return;
-    getPhotos(ids).then(p => setPhotoCache(p));
+    getPhotos(ids)
+      .then(p => setPhotoCache(p))
+      .catch(() => setActionError("Could not load one or more saved photos."));
   }, [incidents]);
 
   const compress = useCallback((file: File): Promise<PendingPhoto> =>
@@ -182,8 +199,16 @@ export default function IncidentPage({ session, onBack }: Props) {
     const slots = 5 - pendingPhotos.length;
     if (slots <= 0) return;
     const list = Array.from(files).filter(f => f.type.startsWith("image/")).slice(0, slots);
-    const processed = await Promise.all(list.map(compress));
-    setPendingPhotos(prev => [...prev, ...processed]);
+    setActionError("");
+    const processed = await Promise.allSettled(list.map(compress));
+    const ok = processed
+      .filter((result): result is PromiseFulfilledResult<PendingPhoto> => result.status === "fulfilled")
+      .map(result => result.value);
+    const failedCount = processed.length - ok.length;
+    if (ok.length) setPendingPhotos(prev => [...prev, ...ok]);
+    if (failedCount > 0) {
+      setActionError(`${failedCount} photo${failedCount === 1 ? "" : "s"} failed to process.`);
+    }
   };
 
   const startEdit = (incident: Incident) => {
@@ -228,81 +253,107 @@ export default function IncidentPage({ session, onBack }: Props) {
     setDesc("");
     setPendingPhotos([]);
     setUrgent(false);
+    setActionError("");
   };
 
   const resolvedCategory = category === "Other" ? otherText.trim() || "Other" : category;
-  const canLog = !!category && (category !== "Other" || otherText.trim()) && desc.trim();
+  const canLog =
+    !!category &&
+    (category !== "Other" || otherText.trim()) &&
+    desc.trim() &&
+    isValidDateText(date) &&
+    isValidTimeText(time);
 
   const log = async () => {
     if (!canLog || logging) return;
     setLogging(true);
+    setActionError("");
 
-    const originalInc = editingId ? incidents.find(i => i.id === editingId) : null;
+    try {
+      const originalInc = editingId ? incidents.find(i => i.id === editingId) : null;
 
-    // Photos that were in the original but removed during edit
-    if (originalInc) {
-      const keptIds = new Set(pendingPhotos.filter(p => p.isExisting).map(p => p.id));
-      const toDelete = originalInc.photoIds.filter(id => !keptIds.has(id));
-      if (toDelete.length) await deletePhotos(toDelete);
+      // Photos that were in the original but removed during edit
+      if (originalInc) {
+        const keptIds = new Set(pendingPhotos.filter(p => p.isExisting).map(p => p.id));
+        const toDelete = originalInc.photoIds.filter(id => !keptIds.has(id));
+        if (toDelete.length) await deletePhotos(toDelete);
+      }
+
+      // Save only newly added photos (not existing ones)
+      const newPhotos = pendingPhotos.filter(p => !p.isExisting);
+      await Promise.all(newPhotos.map(p => savePhoto(p.id, p.dataUrl)));
+
+      const incident: Incident = {
+        id: editingId ?? `inc_${Date.now()}`,
+        sessionId: session.id,
+        date,
+        time,
+        building,
+        room,
+        category: resolvedCategory,
+        description: desc.trim(),
+        photoIds: pendingPhotos.map(p => p.id),
+        createdAt: originalInc?.createdAt ?? new Date().toISOString(),
+        urgent,
+      };
+
+      saveIncident(incident);
+
+      const updated = getIncidents(session.id);
+      updateSession(session.id, { incidentCount: updated.length });
+
+      const newCache = { ...photoCache };
+      newPhotos.forEach(p => {
+        newCache[p.id] = p.dataUrl;
+      });
+      setPhotoCache(newCache);
+
+      setIncidents(sortIncidents(updated));
+
+      if (editingId) {
+        cancelEdit();
+      } else {
+        setTime(nowTime());
+        setDesc("");
+        setPendingPhotos([]);
+        setUrgent(false);
+      }
+    } catch {
+      setActionError("Could not save this incident. Your data is unchanged.");
+    } finally {
+      setLogging(false);
     }
-
-    // Save only newly added photos (not existing ones)
-    const newPhotos = pendingPhotos.filter(p => !p.isExisting);
-    await Promise.all(newPhotos.map(p => savePhoto(p.id, p.dataUrl)));
-
-    const incident: Incident = {
-      id: editingId ?? `inc_${Date.now()}`,
-      sessionId: session.id,
-      date, time,
-      building,
-      room,
-      category: resolvedCategory,
-      description: desc.trim(),
-      photoIds: pendingPhotos.map(p => p.id),
-      createdAt: originalInc?.createdAt ?? new Date().toISOString(),
-      urgent,
-    };
-
-    saveIncident(incident);
-
-    const updated = getIncidents(session.id);
-    updateSession(session.id, { incidentCount: updated.length });
-
-    const newCache = { ...photoCache };
-    newPhotos.forEach(p => { newCache[p.id] = p.dataUrl; });
-    setPhotoCache(newCache);
-
-    setIncidents(sortIncidents(updated));
-
-    if (editingId) {
-      cancelEdit();
-    } else {
-      setTime(nowTime());
-      setDesc("");
-      setPendingPhotos([]);
-      setUrgent(false);
-    }
-    setLogging(false);
   };
 
   const deleteInc = async (id: string) => {
-    const inc = incidents.find(i => i.id === id);
-    if (!inc) return;
-    if (inc.photoIds.length) await deletePhotos(inc.photoIds);
-    removeIncident(id);
-    if (editingId === id) cancelEdit();
-    const updated = getIncidents(session.id);
-    updateSession(session.id, { incidentCount: updated.length });
-    setIncidents(sortIncidents(updated));
+    setActionError("");
+    try {
+      const inc = incidents.find(i => i.id === id);
+      if (!inc) return;
+      if (inc.photoIds.length) await deletePhotos(inc.photoIds);
+      removeIncident(id);
+      if (editingId === id) cancelEdit();
+      const updated = getIncidents(session.id);
+      updateSession(session.id, { incidentCount: updated.length });
+      setIncidents(sortIncidents(updated));
+    } catch {
+      setActionError("Delete failed. Please try again.");
+    }
   };
 
   const compile = async () => {
     if (!incidents.length) return;
     setCompiling(true);
-    const ids = incidents.flatMap(i => i.photoIds);
-    const photos = ids.length ? await getPhotos(ids) : {};
-    generateReport(incidents, session.name, photos);
-    setCompiling(false);
+    setActionError("");
+    try {
+      const ids = incidents.flatMap(i => i.photoIds);
+      const photos = ids.length ? await getPhotos(ids) : {};
+      generateReport(incidents, session.name, photos);
+    } catch {
+      setActionError("Could not generate report. Please try again.");
+    } finally {
+      setCompiling(false);
+    }
   };
 
   const isEditing = editingId !== null;
@@ -356,15 +407,27 @@ export default function IncidentPage({ session, onBack }: Props) {
             )}
           </div>
 
+          {actionError && (
+            <div style={{ color: "#f87171", fontSize: "11px", marginBottom: "12px", padding: "8px 10px", borderRadius: "4px", border: "1px solid #7f1d1d", background: "#1a0000" }}>
+              {actionError}
+            </div>
+          )}
+
           {/* Date + Time */}
           <div style={{ display: "flex", gap: "10px", marginBottom: "14px" }}>
             <div style={{ flex: 1 }}>
               <label style={labelStyle}>DATE</label>
               <input value={date} onChange={e => setDate(e.target.value)} style={inputStyle} />
+              {!isValidDateText(date) && (
+                <div style={{ color: "#f59e0b", fontSize: "10px", marginTop: "4px" }}>Use MM/DD/YYYY format.</div>
+              )}
             </div>
             <div style={{ flex: 1 }}>
               <label style={labelStyle}>TIME OF INCIDENT</label>
               <input value={time} onChange={e => setTime(e.target.value)} style={inputStyle} />
+              {!isValidTimeText(time) && (
+                <div style={{ color: "#f59e0b", fontSize: "10px", marginTop: "4px" }}>Use 24h HH:MM format.</div>
+              )}
             </div>
           </div>
 

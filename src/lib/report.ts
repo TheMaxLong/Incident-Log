@@ -1,5 +1,19 @@
 import type { Incident } from "../types";
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function toSafeDataImage(url: string | undefined): string {
+  if (!url) return "";
+  return /^data:image\/(png|jpeg|jpg|webp|gif);base64,/i.test(url) ? url : "";
+}
+
 export function generateReport(
   incidents: Incident[],
   sessionName: string,
@@ -17,9 +31,15 @@ export function generateReport(
         ? `${inc.building}${inc.room ? " · " + inc.room : ""}`
         : "General Facility";
 
+      const safeRoom = escapeHtml(room);
+      const safeCategory = escapeHtml(inc.category);
+      const safeDate = escapeHtml(inc.date);
+      const safeTime = escapeHtml(inc.time);
+      const safeDescription = escapeHtml(inc.description).replace(/\n/g, "<br>");
+
       const photoHtml = inc.photoIds
         .map(pid => {
-          const src = photos[pid];
+          const src = toSafeDataImage(photos[pid]);
           return src
             ? `<div class="photo-wrap"><img src="${src}" class="photo" alt="Incident photo" /></div>`
             : "";
@@ -31,12 +51,12 @@ export function generateReport(
           <div class="inc-number${inc.urgent ? " urgent-num" : ""}">${inc.urgent ? "⚑ " : ""}#${String(idx + 1).padStart(2, "0")}${inc.urgent ? " URGENT **" : ""}</div>
           <div class="inc-header">
             <div class="inc-left">
-              <span class="inc-room">${room}</span>
-              <span class="inc-cat">${inc.category}</span>
+              <span class="inc-room">${safeRoom}</span>
+              <span class="inc-cat">${safeCategory}</span>
             </div>
-            <div class="inc-time">${inc.date} &nbsp; ${inc.time}</div>
+            <div class="inc-time">${safeDate} &nbsp; ${safeTime}</div>
           </div>
-          <div class="inc-desc">${inc.description.replace(/\n/g, "<br>")}</div>
+          <div class="inc-desc">${safeDescription}</div>
           ${photoHtml ? `<div class="photos">${photoHtml}</div>` : ""}
         </div>
       `;
@@ -53,7 +73,7 @@ export function generateReport(
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Incident Report — ${sessionName}</title>
+<title>Incident Report — ${escapeHtml(sessionName)}</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
 
@@ -195,8 +215,8 @@ export function generateReport(
   .photo-wrap { flex: 0 0 auto; }
 
   .photo {
-    max-width: 260px;
-    max-height: 195px;
+    max-width: 368px;
+    max-height: 276px;
     width: auto;
     height: auto;
     object-fit: cover;
@@ -220,11 +240,14 @@ export function generateReport(
     .page { width: 100%; max-width: 100%; }
     .cover { padding: 40px 48px 32px; }
     .incidents-wrap { padding: 32px 48px 60px; }
-    body { font-size: 13pt; }
-    .inc-room { font-size: 16pt !important; }
-    .inc-desc { font-size: 13pt !important; }
+    body { font-size: 17pt; }
+    .inc-room { font-size: 21pt !important; }
+    .inc-cat { font-size: 13pt !important; }
+    .inc-time { font-size: 14pt !important; }
+    .inc-desc { font-size: 17pt !important; }
+    .inc-number { font-size: 13pt !important; }
     .incident { page-break-inside: avoid; }
-    @page { margin: 0; size: letter; }
+    @page { margin: 12mm; }
   }
 </style>
 </head>
@@ -234,7 +257,7 @@ export function generateReport(
   <div class="cover">
     <div class="cover-eyebrow">Cultivation Facility — Incident Report</div>
     <div class="cover-title">Shift Log</div>
-    <div class="cover-session">${sessionName}</div>
+    <div class="cover-session">${escapeHtml(sessionName)}</div>
     <div class="cover-meta">
       <span>${sorted.length} incident${sorted.length !== 1 ? "s" : ""} · chronological order</span>
       <span>Generated ${generatedAt}</span>
