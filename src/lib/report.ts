@@ -148,8 +148,8 @@ export function generateReport(
   }
 
   .first-incident-wrap .photo {
-    max-width: 430px;
-    max-height: 322px;
+    max-width: 486px;
+    max-height: 364px;
   }
 
   /* Incidents */
@@ -228,8 +228,8 @@ export function generateReport(
   .photo-wrap { flex: 0 0 auto; }
 
   .photo {
-    max-width: 368px;
-    max-height: 276px;
+    max-width: 416px;
+    max-height: 312px;
     width: auto;
     height: auto;
     object-fit: cover;
@@ -251,28 +251,45 @@ export function generateReport(
 
   @media print {
     .page { width: 100%; max-width: 100%; }
-    .cover { padding: 30px 40px 24px; }
-    .incidents-wrap { padding: 24px 40px 48px; }
+
+    /* Cover — tight in print so it doesn't hog the first page */
+    .cover { padding: 22px 36px 18px; }
+    .cover-eyebrow { font-size: 12pt; margin-bottom: 8px; }
+    .cover-title { font-size: 28pt; margin-bottom: 4px; }
+    .cover-session { font-size: 16pt; }
+    .cover-meta { font-size: 12pt; margin-top: 14px; padding-top: 12px; }
+
+    /* First incident — flush against the cover, zero gap */
+    .incidents-wrap { padding: 20px 36px 40px; }
+    .first-incident-wrap { padding-top: 0; margin-top: 0; }
+
+    /* Keep first-page block together */
     .first-page-block { page-break-inside: avoid; break-inside: avoid-page; }
-    .first-incident-wrap { padding-top: 12px; }
-    body { font-size: 17pt; }
-    .inc-room { font-size: 21pt !important; }
-    .inc-cat { font-size: 13pt !important; }
-    .inc-time { font-size: 14pt !important; }
-    .inc-desc { font-size: 17pt !important; }
-    .inc-number { font-size: 13pt !important; }
+
+    /* Main font — 17pt → 23pt (+35%) */
+    body { font-size: 23pt; line-height: 1.55; }
+    .inc-room   { font-size: 28pt !important; }
+    .inc-cat    { font-size: 18pt !important; }
+    .inc-time   { font-size: 19pt !important; }
+    .inc-desc   { font-size: 23pt !important; line-height: 1.65; }
+    .inc-number { font-size: 18pt !important; }
+
+    /* Keep each incident block together across pages */
     .incident { page-break-inside: avoid; break-inside: avoid-page; }
-    .long-report .incidents-wrap:not(.first-incident-wrap) { padding: 18px 34px 40px; }
-    .long-report .incidents-wrap:not(.first-incident-wrap) .incident { padding: 20px 0; }
+
+    /* Long-report compact mode — slightly tighter on pages 2+ */
+    .long-report .incidents-wrap:not(.first-incident-wrap) { padding: 14px 30px 36px; }
+    .long-report .incidents-wrap:not(.first-incident-wrap) .incident { padding: 18px 0; }
     .long-report .incidents-wrap:not(.first-incident-wrap) .inc-desc {
-      font-size: 15pt !important;
-      line-height: 1.62;
+      font-size: 20pt !important;
+      line-height: 1.58;
     }
     .long-report .incidents-wrap:not(.first-incident-wrap) .photo {
-      max-width: 320px;
-      max-height: 240px;
+      max-width: 416px;
+      max-height: 312px;
     }
-    @page { margin: 12mm; }
+
+    @page { margin: 10mm; }
   }
 </style>
 </head>
