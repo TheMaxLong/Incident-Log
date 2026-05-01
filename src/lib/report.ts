@@ -223,9 +223,15 @@ export function generateReport(
     flex-wrap: wrap;
     gap: 10px;
     margin-top: 14px;
+    page-break-inside: auto;
+    break-inside: auto;
   }
 
-  .photo-wrap { flex: 0 0 auto; }
+  .photo-wrap {
+    flex: 0 0 auto;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
 
   .photo {
     max-width: 374px;
@@ -274,18 +280,23 @@ export function generateReport(
     .inc-desc   { font-size: 20pt !important; line-height: 1.68; }
     .inc-number { font-size: 15pt !important; }
 
-    /* Keep most incidents together, but allow first incident to split to avoid page-1 gap */
-    .incident { page-break-inside: avoid; break-inside: avoid-page; }
-    .first-incident-wrap .incident {
-      page-break-inside: auto;
-      break-inside: auto;
+    /* Allow incident flow to reduce large blank areas between pages */
+    .incident { page-break-inside: auto; break-inside: auto; }
+    .inc-number,
+    .inc-header {
+      page-break-after: avoid;
+      break-after: avoid-page;
+    }
+    .inc-desc {
+      orphans: 3;
+      widows: 3;
     }
 
     /* Long-report compact mode — slightly tighter on pages 2+ */
     .long-report .incidents-wrap:not(.first-incident-wrap) { padding: 14px 30px 36px; }
     .long-report .incidents-wrap:not(.first-incident-wrap) .incident { padding: 18px 0; }
     .long-report .incidents-wrap:not(.first-incident-wrap) .inc-desc {
-      font-size: 18pt !important;
+      font-size: 20pt !important;
       line-height: 1.58;
     }
     .long-report .incidents-wrap:not(.first-incident-wrap) .photo {

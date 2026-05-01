@@ -70,9 +70,20 @@ export default function SessionsPage({ onSelect }: Props) {
     setImporting(true);
     setImportMsg("");
     try {
-      const { sessions: s, incidents: i } = await uploadArchive(file);
+      const {
+        sessions: s,
+        incidents: i,
+        skippedSessions,
+        skippedIncidents,
+      } = await uploadArchive(file);
       setSessions(getSessions());
-      setImportMsg(`Imported ${s} session${s !== 1 ? "s" : ""}, ${i} incident${i !== 1 ? "s" : ""}`);
+      const skippedTotal = skippedSessions + skippedIncidents;
+      const skippedPart = skippedTotal
+        ? ` · skipped ${skippedTotal} duplicate${skippedTotal !== 1 ? "s" : ""}`
+        : "";
+      setImportMsg(
+        `Imported ${s} session${s !== 1 ? "s" : ""}, ${i} incident${i !== 1 ? "s" : ""}${skippedPart}`
+      );
     } catch {
       setImportMsg("Import failed — invalid file");
     }
