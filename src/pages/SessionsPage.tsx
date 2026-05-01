@@ -103,7 +103,7 @@ export default function SessionsPage({ onSelect }: Props) {
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", borderBottom: "1px solid #1e293b", paddingBottom: "14px", marginBottom: "28px" }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: "10px" }}>
             <span style={{ fontFamily: "'Space Mono', monospace", color: "#7dd3fc", fontSize: "15px", fontWeight: "bold", letterSpacing: "0.06em" }}>INCIDENT LOG</span>
-            <span style={{ color: "#334155", fontSize: "11px" }}>v0428</span>
+            <span style={{ color: "#334155", fontSize: "11px" }}>v501</span>
           </div>
           <div style={{ display: "flex", gap: "8px" }}>
             <button
