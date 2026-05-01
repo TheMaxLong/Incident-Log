@@ -148,8 +148,8 @@ export function generateReport(
   }
 
   .first-incident-wrap .photo {
-    max-width: 486px;
-    max-height: 364px;
+    max-width: 437px;
+    max-height: 328px;
   }
 
   /* Incidents */
@@ -228,8 +228,8 @@ export function generateReport(
   .photo-wrap { flex: 0 0 auto; }
 
   .photo {
-    max-width: 416px;
-    max-height: 312px;
+    max-width: 374px;
+    max-height: 281px;
     width: auto;
     height: auto;
     object-fit: cover;
@@ -263,30 +263,34 @@ export function generateReport(
     .incidents-wrap { padding: 20px 36px 40px; }
     .first-incident-wrap { padding-top: 0; margin-top: 0; }
 
-    /* Keep first-page block together */
-    .first-page-block { page-break-inside: avoid; break-inside: avoid-page; }
+    /* Allow flow so the first incident starts directly under the cover */
+    .first-page-block { page-break-inside: auto; break-inside: auto; }
 
-    /* Main font — 17pt → 23pt (+35%) */
-    body { font-size: 23pt; line-height: 1.55; }
-    .inc-room   { font-size: 28pt !important; }
-    .inc-cat    { font-size: 18pt !important; }
-    .inc-time   { font-size: 19pt !important; }
-    .inc-desc   { font-size: 23pt !important; line-height: 1.65; }
-    .inc-number { font-size: 18pt !important; }
+    /* Main font — 17pt → ~20pt (+15%) */
+    body { font-size: 20pt; line-height: 1.6; }
+    .inc-room   { font-size: 24pt !important; }
+    .inc-cat    { font-size: 15pt !important; }
+    .inc-time   { font-size: 16pt !important; }
+    .inc-desc   { font-size: 20pt !important; line-height: 1.68; }
+    .inc-number { font-size: 15pt !important; }
 
-    /* Keep each incident block together across pages */
+    /* Keep most incidents together, but allow first incident to split to avoid page-1 gap */
     .incident { page-break-inside: avoid; break-inside: avoid-page; }
+    .first-incident-wrap .incident {
+      page-break-inside: auto;
+      break-inside: auto;
+    }
 
     /* Long-report compact mode — slightly tighter on pages 2+ */
     .long-report .incidents-wrap:not(.first-incident-wrap) { padding: 14px 30px 36px; }
     .long-report .incidents-wrap:not(.first-incident-wrap) .incident { padding: 18px 0; }
     .long-report .incidents-wrap:not(.first-incident-wrap) .inc-desc {
-      font-size: 20pt !important;
+      font-size: 18pt !important;
       line-height: 1.58;
     }
     .long-report .incidents-wrap:not(.first-incident-wrap) .photo {
-      max-width: 416px;
-      max-height: 312px;
+      max-width: 374px;
+      max-height: 281px;
     }
 
     @page { margin: 10mm; }
