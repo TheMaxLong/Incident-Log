@@ -176,8 +176,10 @@ export default function IncidentPage({ session, onBack }: Props) {
   const [compileMode, setCompileMode]     = useState<CompileMode>("incidents");
 
   const fetchFluxuum = async () => {
-    const base = fluxuumUrl.trim().replace(/\/$/, "");
+    let base = fluxuumUrl.trim();
     if (!base) { setFluxuumError("Enter the FLUXUUM URL first."); return; }
+    // Accept full URLs — strip any path, just keep origin
+    try { base = new URL(base).origin; } catch { base = base.replace(/\/$/, ""); }
     setFluxuumLoading(true);
     setFluxuumError(null);
     try {
