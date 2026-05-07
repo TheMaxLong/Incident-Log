@@ -1,12 +1,10 @@
-import type { Incident } from "../types";
+import type { Incident, FluxuumReport, FluxuumZone, FluxuumAnomaly } from "../types";
 
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+export type CompileMode = "incidents" | "merged" | "separate";
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+          .replace(/"/g,"&quot;").replace(/'/g,"&#39;");
 }
 
 function toSafeDataImage(url: string | undefined): string {
@@ -14,10 +12,216 @@ function toSafeDataImage(url: string | undefined): string {
   return /^data:image\/(png|jpeg|jpg|webp|gif);base64,/i.test(url) ? url : "";
 }
 
+function fmtTime(iso: string): string {
+  return new Date(iso).toLocaleString("en-US", {
+    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: true,
+  });
+}
+
+function sc(status: FluxuumZone["status"]) {
+  return status === "critical" ? "#dc2626" : status === "warning" ? "#d97706" : "#16a34a";
+}
+function sb(status: FluxuumZone["status"]) {
+  return status === "critical" ? "#fef2f2" : status === "warning" ? "#fffbeb" : "#f0fdf4";
+}
+
+// ── Sensor report body (tables + AI — no cover) ──────────────────────────────
+function buildSensorBody(data: FluxuumReport): string {
+  const { zoneBreakdown, anomalies, aiNarrative } = data;
+
+  const zoneRows = zoneBreakdown.slice(0, 24).map((z: FluxuumZone) => `
+    <tr>
+      <td class="zt">${escapeHtml(z.zone)}</td>
+      <td class="zt r">${z.readingCount}</td>
+      <td class="zt r" style="color:${z.flaggedCount>0?"#dc2626":"#16a34a"};font-weight:700">${z.flaggedCount}</td>
+      <td class="zt r">${z.ph1Avg??"—"}</td>
+      <td class="zt r">${z.ph2Avg??"—"}</td>
+      <td class="zt r">${z.ecAvg??"—"}</td>
+      <td class="zt r">${z.flowAvg??"—"}</td>
+      <td class="zt" style="text-align:center">
+        <span style="background:${sb(z.status)};color:${sc(z.status)};border:1px solid ${sc(z.status)};border-radius:3px;padding:2px 7px;font-size:11pt;font-weight:700">${z.status.toUpperCase()}</span>
+      </td>
+    </tr>`).join("");
+
+  const anomalyRows = anomalies.slice(0, 20).map((a: FluxuumAnomaly, i: number) => `
+    <tr style="background:${i%2===0?"#fff":"#fafafa"}">
+      <td class="at">${fmtTime(a.time)}</td>
+      <td class="at" style="font-weight:700">${escapeHtml(a.zone)}</td>
+      <td class="at">${escapeHtml(a.recipe??"—")}</td>
+      <td class="at r" style="color:${a.ph1!=null&&(a.ph1<=5.6||a.ph1>=6.3)?"#dc2626":"inherit"}">${a.ph1?.toFixed(2)??"—"}</td>
+      <td class="at r" style="color:${a.ph2!=null&&(a.ph2<=5.6||a.ph2>=6.3)?"#dc2626":"inherit"}">${a.ph2?.toFixed(2)??"—"}</td>
+      <td class="at r" style="color:${a.ec!=null&&(a.ec>=3.5||a.ec<=2.8)?"#d97706":"inherit"}">${a.ec?.toFixed(2)??"—"}</td>
+      <td class="at">${a.reasons.map(r=>escapeHtml(r)).join(" · ")}</td>
+    </tr>`).join("");
+
+  const narrative = aiNarrative ? `
+    <div class="ai-block">
+      <div class="ai-label">AI ANALYSIS · FLUXUUM</div>
+      <div class="ai-text">${escapeHtml(aiNarrative).replace(/\n/g,"<br>").replace(/\*\*(.*?)\*\*/g,"<strong>$1</strong>")}</div>
+    </div>` : "";
+
+  return `
+    ${zoneBreakdown.length > 0 ? `
+    <div class="section-head">Zone Breakdown</div>
+    <table class="zone-table">
+      <thead><tr>
+        <th>ZONE</th><th class="r">RDGS</th><th class="r">FLAGS</th>
+        <th class="r">pH1 AVG</th><th class="r">pH2 AVG</th><th class="r">EC AVG</th>
+        <th class="r">FLOW AVG</th><th style="text-align:center">STATUS</th>
+      </tr></thead>
+      <tbody>${zoneRows}</tbody>
+    </table>` : ""}
+    ${anomalies.length > 0 ? `
+    <div class="section-head" style="margin-top:32px">
+      Anomaly Log — Top ${Math.min(anomalies.length,20)} of ${anomalies.length}
+    </div>
+    <table class="anomaly-table">
+      <thead><tr><th>TIME</th><th>ZONE</th><th>RECIPE</th><th class="r">pH1</th><th class="r">pH2</th><th class="r">EC</th><th>FLAGS</th></tr></thead>
+      <tbody>${anomalyRows}</tbody>
+    </table>` : `<div class="clean-banner">✓ No anomalies in this window — all zones clean.</div>`}
+    ${narrative}`;
+}
+
+// ── Cover block for the sensor section ───────────────────────────────────────
+function buildSensorCover(data: FluxuumReport, newPage = false): string {
+  const { period, overview } = data;
+  const breakStyle = newPage ? "page-break-before:always;break-before:page;" : "";
+  return `
+  <div class="sensor-cover" style="${breakStyle}">
+    <div class="sc-eyebrow">Sensor Data — FLUXUUM Logger</div>
+    <div class="sc-title">Runoff Analysis</div>
+    <div class="sc-period">${fmtTime(period.from)} → ${fmtTime(period.to)} &nbsp;·&nbsp; ${period.hours}h window</div>
+    <div class="sc-stats">
+      <div class="sc-stat"><div class="sc-val">${overview.totalReadings}</div><div class="sc-key">READINGS</div></div>
+      <div class="sc-stat"><div class="sc-val" style="color:${overview.flaggedCount>0?"#f87171":"#4ade80"}">${overview.flaggedCount}</div><div class="sc-key">FLAGGED</div></div>
+      <div class="sc-stat"><div class="sc-val">${overview.zonesActive}</div><div class="sc-key">ZONES</div></div>
+      <div class="sc-stat"><div class="sc-val">${overview.ph1Avg?.toFixed(2)??"—"}</div><div class="sc-key">pH1 AVG</div></div>
+      <div class="sc-stat"><div class="sc-val">${overview.ph2Avg?.toFixed(2)??"—"}</div><div class="sc-key">pH2 AVG</div></div>
+      <div class="sc-stat"><div class="sc-val">${overview.ecAvg?.toFixed(2)??"—"}</div><div class="sc-key">EC AVG</div></div>
+    </div>
+  </div>`;
+}
+
+// ── Shared CSS ────────────────────────────────────────────────────────────────
+const INCIDENT_CSS = `
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#fff;color:#1a1a1a;font-family:'JetBrains Mono','Courier New',monospace;font-size:17px;line-height:1.6}
+  .page{width:100%;max-width:100%;padding:0}
+  .cover{background:#1a1a1a;color:#f5f5f5;padding:48px 64px 40px}
+  .cover-eyebrow{font-size:14px;letter-spacing:.18em;color:#888;text-transform:uppercase;margin-bottom:14px}
+  .cover-title{font-size:35px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;line-height:1.1;margin-bottom:8px;color:#fff}
+  .cover-session{font-size:19px;color:#aaa;margin-bottom:6px}
+  .cover-meta{font-size:15px;color:#666;margin-top:24px;padding-top:20px;border-top:1px solid #333;display:flex;gap:28px;flex-wrap:wrap}
+  .incidents-wrap{padding:40px 64px 80px}
+  .first-incident-wrap{padding-top:20px}
+  .first-incident-wrap .photo{max-width:437px;max-height:328px}
+  .incident{padding:28px 0;border-bottom:1px solid #ebebeb}
+  .incident:last-child{border-bottom:none}
+  .inc-number{font-size:14px;font-weight:700;color:#ccc;letter-spacing:.1em;margin-bottom:6px}
+  .inc-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;gap:16px}
+  .inc-left{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .inc-room{font-size:21px;font-weight:700;color:#111}
+  .inc-cat{font-size:14px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#777;background:#f4f4f2;padding:4px 10px;border-radius:2px;white-space:nowrap}
+  .inc-time{font-size:15px;color:#aaa;white-space:nowrap;flex-shrink:0}
+  .inc-desc{font-size:18px;color:#333;line-height:1.75;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;max-width:580px}
+  .photos{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
+  .photo-wrap{flex:0 0 auto;page-break-inside:avoid;break-inside:avoid}
+  .photo{max-width:374px;max-height:281px;width:auto;height:auto;object-fit:cover;border-radius:3px;border:1px solid #e5e5e5;display:block}
+  .incident.urgent{border-left:4px solid #dc2626;padding-left:16px;margin-left:-16px}
+  .inc-number.urgent-num{color:#dc2626;font-size:13px}
+  @media print{
+    .cover{padding:22px 36px 18px}
+    .cover-eyebrow{font-size:12pt;margin-bottom:8px}
+    .cover-title{font-size:28pt;margin-bottom:4px}
+    .cover-session{font-size:16pt}
+    .cover-meta{font-size:12pt;margin-top:14px;padding-top:12px}
+    .incidents-wrap{padding:20px 36px 40px}
+    .first-incident-wrap{padding-top:0;margin-top:0}
+    .first-page-block{page-break-inside:auto;break-inside:auto}
+    body{font-size:20pt;line-height:1.6}
+    .inc-room{font-size:24pt!important}
+    .inc-cat{font-size:15pt!important}
+    .inc-time{font-size:16pt!important}
+    .inc-desc{font-size:20pt!important;line-height:1.68;orphans:3;widows:3}
+    .inc-number{font-size:15pt!important}
+    .incident{page-break-inside:auto;break-inside:auto}
+    .inc-number,.inc-header{page-break-after:avoid;break-after:avoid-page}
+    .long-report .incidents-wrap:not(.first-incident-wrap){padding:14px 30px 36px}
+    .long-report .incidents-wrap:not(.first-incident-wrap) .incident{padding:18px 0}
+    .long-report .incidents-wrap:not(.first-incident-wrap) .inc-desc{font-size:20pt!important;line-height:1.58}
+    @page{margin:10mm}
+  }`;
+
+const SENSOR_CSS = `
+  .sensor-cover{background:#111827;color:#f9fafb;padding:48px 64px 40px}
+  .sc-eyebrow{font-size:13px;letter-spacing:.18em;color:#6b7280;text-transform:uppercase;margin-bottom:12px}
+  .sc-title{font-size:32px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#fff;margin-bottom:6px}
+  .sc-period{font-size:15px;color:#9ca3af;margin-bottom:28px}
+  .sc-stats{display:flex;gap:32px;flex-wrap:wrap;padding-top:20px;border-top:1px solid #374151}
+  .sc-stat{text-align:center}
+  .sc-val{font-size:26px;font-weight:700;color:#7dd3fc}
+  .sc-key{font-size:11px;letter-spacing:.12em;color:#6b7280;margin-top:3px}
+  .sensor-body{padding:40px 64px 80px}
+  .section-head{font-size:13px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#6b7280;border-bottom:1px solid #e5e7eb;padding-bottom:8px;margin-bottom:16px}
+  .zone-table,.anomaly-table{width:100%;border-collapse:collapse;font-size:14px;margin-bottom:8px}
+  .zone-table th,.anomaly-table th{font-size:10px;letter-spacing:.1em;color:#9ca3af;text-align:left;padding:6px 10px;border-bottom:2px solid #e5e7eb;font-weight:700;background:#f9fafb}
+  .zt,.at{padding:9px 10px;border-bottom:1px solid #f3f4f6;font-size:14px;vertical-align:middle}
+  .r{text-align:right!important}
+  .clean-banner{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:4px;padding:16px 20px;color:#15803d;font-size:15px;font-weight:700;margin:24px 0}
+  .ai-block{background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:24px 28px;margin-top:32px;page-break-inside:avoid;break-inside:avoid}
+  .ai-label{font-size:11px;font-weight:700;letter-spacing:.14em;color:#64748b;text-transform:uppercase;margin-bottom:14px}
+  .ai-text{font-family:system-ui,-apple-system,'Segoe UI',sans-serif;font-size:16px;color:#1e293b;line-height:1.8;white-space:pre-wrap}
+  @media print{
+    .sensor-cover{padding:22px 36px 18px}
+    .sc-eyebrow{font-size:11pt}
+    .sc-title{font-size:26pt}
+    .sc-period{font-size:13pt}
+    .sc-stats{gap:20px}
+    .sc-val{font-size:22pt}
+    .sc-key{font-size:10pt}
+    .sensor-body{padding:20px 36px 40px}
+    .zone-table th,.anomaly-table th{font-size:9pt}
+    .zt,.at{font-size:12pt;padding:7px 8px}
+    .ai-text{font-size:14pt}
+  }`;
+
+function openHtml(html: string): void {
+  const blob = new Blob([html], { type: "text/html" });
+  const url  = URL.createObjectURL(blob);
+  window.open(url, "_blank");
+  setTimeout(() => URL.revokeObjectURL(url), 15000);
+}
+
+function buildIncidentBlocks(sorted: Incident[], photos: Record<string, string>): string[] {
+  return sorted.map((inc, idx) => {
+    const room = inc.building ? `${inc.building}${inc.room?" · "+inc.room:""}` : "General Facility";
+    const photoHtml = inc.photoIds
+      .map(pid => { const src = toSafeDataImage(photos[pid]); return src ? `<div class="photo-wrap"><img src="${src}" class="photo" alt=""/></div>` : ""; })
+      .join("");
+    return `
+      <div class="incident${inc.urgent?" urgent":""}">
+        <div class="inc-number${inc.urgent?" urgent-num":""}">${inc.urgent?"⚑ ":""}#${String(idx+1).padStart(2,"0")}${inc.urgent?" URGENT **":""}</div>
+        <div class="inc-header">
+          <div class="inc-left">
+            <span class="inc-room">${escapeHtml(room)}</span>
+            <span class="inc-cat">${escapeHtml(inc.category)}</span>
+          </div>
+          <div class="inc-time">${escapeHtml(inc.date)} &nbsp; ${escapeHtml(inc.time)}</div>
+        </div>
+        <div class="inc-desc">${escapeHtml(inc.description).replace(/\n/g,"<br>")}</div>
+        ${photoHtml?`<div class="photos">${photoHtml}</div>`:""}
+      </div>`;
+  });
+}
+
+// ── Main entry point ──────────────────────────────────────────────────────────
 export function generateReport(
   incidents: Incident[],
   sessionName: string,
-  photos: Record<string, string>
+  photos: Record<string, string>,
+  mode: CompileMode = "incidents",
+  fluxuumData?: FluxuumReport,
 ): void {
   const sorted = [...incidents].sort((a, b) => {
     if (a.urgent && !b.urgent) return -1;
@@ -25,315 +229,72 @@ export function generateReport(
     return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
   });
 
-  const incidentBlocks = sorted
-    .map((inc, idx) => {
-      const room = inc.building
-        ? `${inc.building}${inc.room ? " · " + inc.room : ""}`
-        : "General Facility";
-
-      const safeRoom = escapeHtml(room);
-      const safeCategory = escapeHtml(inc.category);
-      const safeDate = escapeHtml(inc.date);
-      const safeTime = escapeHtml(inc.time);
-      const safeDescription = escapeHtml(inc.description).replace(/\n/g, "<br>");
-
-      const photoHtml = inc.photoIds
-        .map(pid => {
-          const src = toSafeDataImage(photos[pid]);
-          return src
-            ? `<div class="photo-wrap"><img src="${src}" class="photo" alt="Incident photo" /></div>`
-            : "";
-        })
-        .join("");
-
-      return `
-        <div class="incident${inc.urgent ? " urgent" : ""}">
-          <div class="inc-number${inc.urgent ? " urgent-num" : ""}">${inc.urgent ? "⚑ " : ""}#${String(idx + 1).padStart(2, "0")}${inc.urgent ? " URGENT **" : ""}</div>
-          <div class="inc-header">
-            <div class="inc-left">
-              <span class="inc-room">${safeRoom}</span>
-              <span class="inc-cat">${safeCategory}</span>
-            </div>
-            <div class="inc-time">${safeDate} &nbsp; ${safeTime}</div>
-          </div>
-          <div class="inc-desc">${safeDescription}</div>
-          ${photoHtml ? `<div class="photos">${photoHtml}</div>` : ""}
-        </div>
-      `;
-    });
-
-  const firstIncidentBlock = incidentBlocks[0] ?? "";
-  const remainingIncidentBlocks = incidentBlocks.slice(1).join("");
-
   const generatedAt = new Date().toLocaleString("en-US", {
-    month: "short", day: "numeric", year: "numeric",
-    hour: "2-digit", minute: "2-digit",
+    month:"short", day:"numeric", year:"numeric", hour:"2-digit", minute:"2-digit",
   });
+  const isLong = sorted.length >= 15;
+  const blocks  = buildIncidentBlocks(sorted, photos);
+  const first   = blocks[0] ?? "";
+  const rest    = blocks.slice(1).join("");
 
-  const isLongReport = sorted.length >= 15;
+  const eyebrow = mode === "merged"
+    ? "Cultivation Facility — Incident Report + Sensor Analysis"
+    : "Cultivation Facility — Incident Report";
 
-  const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+  const sensorMeta = mode === "merged" && fluxuumData
+    ? `<span>${fluxuumData.overview.totalReadings} sensor readings · ${fluxuumData.period.hours}h window</span>` : "";
+
+  // ── Incident PDF ────────────────────────────────────────────────────────────
+  const incidentDoc = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8">
 <title>Incident Report — ${escapeHtml(sessionName)}</title>
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
-
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-
-  body {
-    background: #ffffff;
-    color: #1a1a1a;
-    font-family: 'JetBrains Mono', 'Courier New', monospace;
-    font-size: 17px;
-    line-height: 1.6;
-  }
-
-  .page {
-    width: 100%;
-    max-width: 100%;
-    padding: 0;
-  }
-
-  /* Cover */
-  .cover {
-    background: #1a1a1a;
-    color: #f5f5f5;
-    padding: 48px 64px 40px;
-    margin-bottom: 0;
-  }
-
-  .cover-eyebrow {
-    font-size: 14px;
-    letter-spacing: 0.18em;
-    color: #888;
-    text-transform: uppercase;
-    margin-bottom: 14px;
-  }
-
-  .cover-title {
-    font-size: 35px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    line-height: 1.1;
-    margin-bottom: 8px;
-    color: #fff;
-  }
-
-  .cover-session {
-    font-size: 19px;
-    color: #aaa;
-    margin-bottom: 6px;
-  }
-
-  .cover-meta {
-    font-size: 15px;
-    color: #666;
-    margin-top: 24px;
-    padding-top: 20px;
-    border-top: 1px solid #333;
-    display: flex;
-    gap: 28px;
-  }
-
-  .incidents-wrap {
-    padding: 40px 64px 80px;
-  }
-
-  .first-incident-wrap {
-    padding-top: 20px;
-  }
-
-  .first-incident-wrap .photo {
-    max-width: 437px;
-    max-height: 328px;
-  }
-
-  /* Incidents */
-  .incident {
-    padding: 28px 0;
-    border-bottom: 1px solid #ebebeb;
-  }
-
-  .incident:last-child {
-    border-bottom: none;
-  }
-
-  .inc-number {
-    font-size: 14px;
-    font-weight: 700;
-    color: #ccc;
-    letter-spacing: 0.1em;
-    margin-bottom: 6px;
-  }
-
-  .inc-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    margin-bottom: 10px;
-    gap: 16px;
-  }
-
-  .inc-left {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
-  }
-
-  .inc-room {
-    font-size: 21px;
-    font-weight: 700;
-    color: #111;
-  }
-
-  .inc-cat {
-    font-size: 14px;
-    font-weight: 700;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: #777;
-    background: #f4f4f2;
-    padding: 4px 10px;
-    border-radius: 2px;
-    white-space: nowrap;
-  }
-
-  .inc-time {
-    font-size: 15px;
-    color: #aaa;
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
-
-  .inc-desc {
-    font-size: 18px;
-    color: #333;
-    line-height: 1.75;
-    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
-    max-width: 580px;
-  }
-
-  .photos {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    margin-top: 14px;
-    page-break-inside: auto;
-    break-inside: auto;
-  }
-
-  .photo-wrap {
-    flex: 0 0 auto;
-    page-break-inside: avoid;
-    break-inside: avoid;
-  }
-
-  .photo {
-    max-width: 374px;
-    max-height: 281px;
-    width: auto;
-    height: auto;
-    object-fit: cover;
-    border-radius: 3px;
-    border: 1px solid #e5e5e5;
-    display: block;
-  }
-
-  .incident.urgent {
-    border-left: 4px solid #dc2626;
-    padding-left: 16px;
-    margin-left: -16px;
-  }
-
-  .inc-number.urgent-num {
-    color: #dc2626;
-    font-size: 13px;
-  }
-
-  @media print {
-    .page { width: 100%; max-width: 100%; }
-
-    /* Cover — tight in print so it doesn't hog the first page */
-    .cover { padding: 22px 36px 18px; }
-    .cover-eyebrow { font-size: 12pt; margin-bottom: 8px; }
-    .cover-title { font-size: 28pt; margin-bottom: 4px; }
-    .cover-session { font-size: 16pt; }
-    .cover-meta { font-size: 12pt; margin-top: 14px; padding-top: 12px; }
-
-    /* First incident — flush against the cover, zero gap */
-    .incidents-wrap { padding: 20px 36px 40px; }
-    .first-incident-wrap { padding-top: 0; margin-top: 0; }
-
-    /* Allow flow so the first incident starts directly under the cover */
-    .first-page-block { page-break-inside: auto; break-inside: auto; }
-
-    /* Main font — 17pt → ~20pt (+15%) */
-    body { font-size: 20pt; line-height: 1.6; }
-    .inc-room   { font-size: 24pt !important; }
-    .inc-cat    { font-size: 15pt !important; }
-    .inc-time   { font-size: 16pt !important; }
-    .inc-desc   { font-size: 20pt !important; line-height: 1.68; }
-    .inc-number { font-size: 15pt !important; }
-
-    /* Allow incident flow to reduce large blank areas between pages */
-    .incident { page-break-inside: auto; break-inside: auto; }
-    .inc-number,
-    .inc-header {
-      page-break-after: avoid;
-      break-after: avoid-page;
-    }
-    .inc-desc {
-      orphans: 3;
-      widows: 3;
-    }
-
-    /* Long-report compact mode — slightly tighter on pages 2+ */
-    .long-report .incidents-wrap:not(.first-incident-wrap) { padding: 14px 30px 36px; }
-    .long-report .incidents-wrap:not(.first-incident-wrap) .incident { padding: 18px 0; }
-    .long-report .incidents-wrap:not(.first-incident-wrap) .inc-desc {
-      font-size: 20pt !important;
-      line-height: 1.58;
-    }
-    .long-report .incidents-wrap:not(.first-incident-wrap) .photo {
-      max-width: 374px;
-      max-height: 281px;
-    }
-
-    @page { margin: 10mm; }
-  }
-</style>
-</head>
-<body class="${isLongReport ? "long-report" : ""}">
+<style>${INCIDENT_CSS}${mode==="merged"?SENSOR_CSS:""}</style>
+</head><body class="${isLong?"long-report":""}">
 <div class="page">
-
   <div class="first-page-block">
     <div class="cover">
-      <div class="cover-eyebrow">Cultivation Facility — Incident Report</div>
+      <div class="cover-eyebrow">${eyebrow}</div>
       <div class="cover-title">Shift Log</div>
       <div class="cover-session">${escapeHtml(sessionName)}</div>
       <div class="cover-meta">
-        <span>${sorted.length} incident${sorted.length !== 1 ? "s" : ""} · chronological order</span>
+        <span>${sorted.length} incident${sorted.length!==1?"s":""} · chronological order</span>
+        ${sensorMeta}
         <span>Generated ${generatedAt}</span>
       </div>
     </div>
-
-    ${firstIncidentBlock ? `<div class="incidents-wrap first-incident-wrap">${firstIncidentBlock}</div>` : ""}
+    ${first?`<div class="incidents-wrap first-incident-wrap">${first}</div>`:""}
   </div>
-
-  ${remainingIncidentBlocks ? `<div class="incidents-wrap">${remainingIncidentBlocks}</div>` : ""}
-
+  ${rest?`<div class="incidents-wrap">${rest}</div>`:""}
+  ${mode==="merged"&&fluxuumData
+    ? `${buildSensorCover(fluxuumData,true)}<div class="sensor-body">${buildSensorBody(fluxuumData)}</div>`
+    : ""}
 </div>
-<script>window.onload = () => { window.print(); };<\/script>
-</body>
-</html>`;
+<script>window.onload=()=>{window.print();};<\/script>
+</body></html>`;
 
-  const blob = new Blob([html], { type: "text/html" });
-  const url = URL.createObjectURL(blob);
-  window.open(url, "_blank");
-  setTimeout(() => URL.revokeObjectURL(url), 15000);
+  openHtml(incidentDoc);
+
+  // ── Separate sensor PDF ─────────────────────────────────────────────────────
+  if (mode === "separate" && fluxuumData) {
+    const sensorDoc = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8">
+<title>Sensor Report — ${escapeHtml(sessionName)}</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#fff;color:#1a1a1a;font-family:'JetBrains Mono','Courier New',monospace;font-size:17px;line-height:1.6}
+  .page{width:100%;max-width:100%}
+  ${SENSOR_CSS}
+  .sensor-body{padding:40px 64px 80px}
+  @media print{@page{margin:10mm}}
+</style>
+</head><body>
+<div class="page">
+  ${buildSensorCover(fluxuumData)}
+  <div class="sensor-body">${buildSensorBody(fluxuumData)}</div>
+</div>
+<script>window.onload=()=>{window.print();};<\/script>
+</body></html>`;
+    setTimeout(() => openHtml(sensorDoc), 800);
+  }
 }

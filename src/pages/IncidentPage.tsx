@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import type { Session, Incident } from "../types";
+import type { Session, Incident, FluxuumReport } from "../types";
 import { getIncidents, saveIncident, removeIncident, updateSession } from "../lib/store";
 import { savePhoto, getPhotos, deletePhotos } from "../lib/db";
-import { generateReport } from "../lib/report";
+import { generateReport, type CompileMode } from "../lib/report";
 
 const M = "'JetBrains Mono', 'Courier New', monospace";
 
@@ -162,6 +162,42 @@ export default function IncidentPage({ session, onBack }: Props) {
   const [logging, setLogging] = useState(false);
   const [compiling, setCompiling] = useState(false);
   const [actionError, setActionError] = useState("");
+
+  // ── FLUXUUM integration ──────────────────────────────────────────────────
+  const [fluxuumUrl, setFluxuumUrl]       = useState(() => localStorage.getItem("fluxuumApiUrl") ?? "");
+  const [fluxuumHours, setFluxuumHours]   = useState<6|12|24|48>(() => {
+    const saved = localStorage.getItem("fluxuumHours");
+    return (saved && [6,12,24,48].includes(Number(saved)) ? Number(saved) : 48) as 6|12|24|48;
+  });
+  const [fluxuumData, setFluxuumData]     = useState<FluxuumReport | null>(null);
+  const [fluxuumLoading, setFluxuumLoading] = useState(false);
+  const [fluxuumError, setFluxuumError]   = useState<string | null>(null);
+  const [showFluxuumPanel, setShowFluxuumPanel] = useState(false);
+  const [compileMode, setCompileMode]     = useState<CompileMode>("incidents");
+
+  const fetchFluxuum = async () => {
+    const base = fluxuumUrl.trim().replace(/\/$/, "");
+    if (!base) { setFluxuumError("Enter the FLUXUUM URL first."); return; }
+    setFluxuumLoading(true);
+    setFluxuumError(null);
+    try {
+      localStorage.setItem("fluxuumApiUrl", base);
+      localStorage.setItem("fluxuumHours", String(fluxuumHours));
+      const res = await fetch(`${base}/api/analytics/incident-report`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hours: fluxuumHours, skipAi: false }),
+      });
+      if (!res.ok) throw new Error(`Server responded ${res.status}`);
+      const data: FluxuumReport = await res.json();
+      setFluxuumData(data);
+      if (compileMode === "incidents") setCompileMode("merged");
+    } catch (err) {
+      setFluxuumError(err instanceof Error ? err.message : "Fetch failed — check URL and try again.");
+    } finally {
+      setFluxuumLoading(false);
+    }
+  };
 
   const fileRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLDivElement>(null);
@@ -348,7 +384,7 @@ export default function IncidentPage({ session, onBack }: Props) {
     try {
       const ids = incidents.flatMap(i => i.photoIds);
       const photos = ids.length ? await getPhotos(ids) : {};
-      generateReport(incidents, session.name, photos);
+      generateReport(incidents, session.name, photos, compileMode, fluxuumData ?? undefined);
     } catch {
       setActionError("Could not generate report. Please try again.");
     } finally {
@@ -558,19 +594,144 @@ export default function IncidentPage({ session, onBack }: Props) {
         {/* Shift log */}
         {incidents.length > 0 && (
           <>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
-              <span style={{ color: "#334155", fontSize: "10px", letterSpacing: "0.08em" }}>
-                SHIFT LOG — {incidents.length} incident{incidents.length !== 1 ? "s" : ""}
-              </span>
-              <button
-                onClick={compile}
-                disabled={compiling}
-                style={{ background: "transparent", color: compiling ? "#475569" : "#7dd3fc", border: `1px solid ${compiling ? "#1e293b" : "#7dd3fc33"}`, borderRadius: "4px", padding: "7px 16px", fontFamily: M, fontSize: "11px", cursor: compiling ? "not-allowed" : "pointer", letterSpacing: "0.04em" }}
-              >
-                {compiling ? "COMPILING…" : "COMPILE SHIFT REPORT →"}
-              </button>
+            {/* ── Compile / FLUXUUM bar ── */}
+            <div style={{ background: "#0f1117", border: "1px solid #1e293b", borderRadius: "8px", padding: "16px 18px", marginBottom: "16px" }}>
+
+              {/* Row 1: log count + compile button */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", flexWrap: "wrap" }}>
+                <span style={{ color: "#334155", fontSize: "10px", letterSpacing: "0.08em" }}>
+                  SHIFT LOG — {incidents.length} incident{incidents.length !== 1 ? "s" : ""}
+                  {fluxuumData && (
+                    <span style={{ marginLeft: "10px", color: "#7dd3fc", fontSize: "9px", letterSpacing: "0.06em" }}>
+                      + FLUXUUM {fluxuumData.period.hours}h · {fluxuumData.overview.totalReadings} readings
+                    </span>
+                  )}
+                </span>
+                <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+                  <button
+                    onClick={() => setShowFluxuumPanel(p => !p)}
+                    style={{
+                      background: showFluxuumPanel ? "#0c1a2e" : "transparent",
+                      color: fluxuumData ? "#7dd3fc" : "#475569",
+                      border: `1px solid ${fluxuumData ? "#7dd3fc44" : "#1e293b"}`,
+                      borderRadius: "4px", padding: "6px 12px",
+                      fontFamily: M, fontSize: "10px", cursor: "pointer", letterSpacing: "0.04em",
+                    }}
+                  >
+                    {fluxuumData ? "✓ FLUXUUM LINKED" : "+ FLUXUUM"}
+                  </button>
+                  <button
+                    onClick={compile}
+                    disabled={compiling}
+                    style={{
+                      background: compiling ? "transparent" : "#7dd3fc",
+                      color: compiling ? "#475569" : "#0a0a0a",
+                      border: `1px solid ${compiling ? "#1e293b" : "#7dd3fc"}`,
+                      borderRadius: "4px", padding: "7px 16px",
+                      fontFamily: M, fontSize: "11px", fontWeight: "bold",
+                      cursor: compiling ? "not-allowed" : "pointer", letterSpacing: "0.04em",
+                    }}
+                  >
+                    {compiling ? "COMPILING…" : "COMPILE REPORT →"}
+                  </button>
+                </div>
+              </div>
+
+              {/* Row 2: compile mode selector (only when fluxuumData loaded) */}
+              {fluxuumData && (
+                <div style={{ marginTop: "12px", paddingTop: "12px", borderTop: "1px solid #1e293b", display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                  <span style={{ color: "#334155", fontSize: "9px", letterSpacing: "0.1em", alignSelf: "center", marginRight: "4px" }}>OUTPUT:</span>
+                  {(["incidents","merged","separate"] as CompileMode[]).map(m => {
+                    const labels: Record<CompileMode, string> = {
+                      incidents: "INCIDENTS ONLY",
+                      merged:    "MERGED PDF",
+                      separate:  "SEPARATE PDFs",
+                    };
+                    return (
+                      <button
+                        key={m}
+                        onClick={() => setCompileMode(m)}
+                        style={{
+                          background: compileMode === m ? "#1e3a5f" : "transparent",
+                          color: compileMode === m ? "#7dd3fc" : "#475569",
+                          border: `1px solid ${compileMode === m ? "#7dd3fc44" : "#1e293b"}`,
+                          borderRadius: "4px", padding: "5px 10px",
+                          fontFamily: M, fontSize: "10px", cursor: "pointer", letterSpacing: "0.04em",
+                        }}
+                      >{labels[m]}</button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Row 3: FLUXUUM config panel */}
+              {showFluxuumPanel && (
+                <div style={{ marginTop: "14px", paddingTop: "14px", borderTop: "1px solid #1e293b" }}>
+                  <div style={{ color: "#64748b", fontSize: "9px", letterSpacing: "0.1em", marginBottom: "10px" }}>FLUXUUM CONNECTION</div>
+
+                  <div style={{ display: "flex", gap: "8px", marginBottom: "10px", flexWrap: "wrap" }}>
+                    <input
+                      type="url"
+                      value={fluxuumUrl}
+                      onChange={e => setFluxuumUrl(e.target.value)}
+                      placeholder="https://your-fluxuum.replit.app"
+                      style={{ ...inputStyle, flex: "1", minWidth: "200px", fontSize: "11px" }}
+                    />
+                    <div style={{ display: "flex", gap: "4px" }}>
+                      {([6,12,24,48] as const).map(h => (
+                        <button
+                          key={h}
+                          onClick={() => setFluxuumHours(h)}
+                          style={{
+                            background: fluxuumHours === h ? "#1e3a5f" : "transparent",
+                            color: fluxuumHours === h ? "#7dd3fc" : "#475569",
+                            border: `1px solid ${fluxuumHours === h ? "#7dd3fc44" : "#1e293b"}`,
+                            borderRadius: "4px", padding: "7px 10px",
+                            fontFamily: M, fontSize: "10px", cursor: "pointer",
+                          }}
+                        >{h}h</button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {fluxuumError && (
+                    <div style={{ color: "#f87171", fontSize: "10px", marginBottom: "8px", padding: "6px 8px", background: "#1a0000", borderRadius: "3px", border: "1px solid #7f1d1d" }}>
+                      {fluxuumError}
+                    </div>
+                  )}
+
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                    <button
+                      onClick={fetchFluxuum}
+                      disabled={fluxuumLoading}
+                      style={{
+                        background: fluxuumLoading ? "transparent" : "#0c2a4a",
+                        color: fluxuumLoading ? "#475569" : "#7dd3fc",
+                        border: "1px solid #7dd3fc44",
+                        borderRadius: "4px", padding: "7px 14px",
+                        fontFamily: M, fontSize: "10px", fontWeight: "bold",
+                        cursor: fluxuumLoading ? "not-allowed" : "pointer", letterSpacing: "0.06em",
+                      }}
+                    >
+                      {fluxuumLoading ? "FETCHING…" : "FETCH SENSOR DATA"}
+                    </button>
+                    {fluxuumData && (
+                      <button
+                        onClick={() => { setFluxuumData(null); setCompileMode("incidents"); }}
+                        style={{ background: "none", border: "none", color: "#475569", fontFamily: M, fontSize: "10px", cursor: "pointer" }}
+                      >✕ clear</button>
+                    )}
+                    {fluxuumData && (
+                      <span style={{ color: "#4ade80", fontSize: "10px" }}>
+                        ✓ {fluxuumData.overview.totalReadings} readings · {fluxuumData.overview.flaggedCount} flagged
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
+            {/* Incident cards */}
             <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
               {incidents.map(inc => (
                 <IncidentCard

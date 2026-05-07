@@ -28,3 +28,40 @@ export interface Archive {
   incidents: Incident[];
   photos: Record<string, string>;
 }
+
+export interface FluxuumZone {
+  zone: string;
+  recipe: string | null;
+  readingCount: number;
+  flaggedCount: number;
+  status: "clean" | "warning" | "critical";
+  ph1Avg: number | null; ph1Min: number | null; ph1Max: number | null;
+  ph2Avg: number | null; ph2Min: number | null; ph2Max: number | null;
+  ecAvg: number | null;  ecMin: number | null;  ecMax: number | null;
+  flowAvg: number | null; flowMax: number | null;
+}
+
+export interface FluxuumAnomaly {
+  id: unknown;
+  time: string;
+  zone: string;
+  recipe: string;
+  ph1: number | null; ph2: number | null;
+  ec: number | null;  flowRate: number | null;
+  accumulatedGal: number | null;
+  reasons: string[];
+}
+
+export interface FluxuumReport {
+  period: { from: string; to: string; hours: number };
+  overview: {
+    totalReadings: number; flaggedCount: number; flaggedPct: number;
+    zonesActive: number; zonesWithFlags: number;
+    ph1Avg: number | null; ph2Avg: number | null;
+    ecAvg: number | null;  flowAvg: number | null;
+  };
+  zoneBreakdown: FluxuumZone[];
+  anomalies: FluxuumAnomaly[];
+  aiNarrative: string | null;
+  generatedAt: string;
+}
