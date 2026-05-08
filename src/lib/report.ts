@@ -1,4 +1,4 @@
-import type { Incident, FluxuumReport, FluxuumZone, FluxuumAnomaly } from "../types";
+import type { Incident, FluxuumReport, FluxuumZone } from "../types";
 
 export type CompileMode = "incidents" | "merged" | "separate";
 
@@ -25,9 +25,9 @@ function sb(status: FluxuumZone["status"]) {
   return status === "critical" ? "#fef2f2" : status === "warning" ? "#fffbeb" : "#f0fdf4";
 }
 
-// ── Sensor report body (tables + AI — no cover) ──────────────────────────────
+// ── Sensor report body (zone table only — anomaly log + AI in FLUXUUM) ───────
 function buildSensorBody(data: FluxuumReport): string {
-  const { zoneBreakdown, anomalies, aiNarrative } = data;
+  const { zoneBreakdown } = data;
 
   const zoneRows = zoneBreakdown.slice(0, 24).map((z: FluxuumZone) => `
     <tr>
@@ -39,26 +39,9 @@ function buildSensorBody(data: FluxuumReport): string {
       <td class="zt r">${z.ecAvg??"—"}</td>
       <td class="zt r">${z.flowAvg??"—"}</td>
       <td class="zt" style="text-align:center">
-        <span style="background:${sb(z.status)};color:${sc(z.status)};border:1px solid ${sc(z.status)};border-radius:3px;padding:2px 7px;font-size:11pt;font-weight:700">${z.status.toUpperCase()}</span>
+        <span style="background:${sb(z.status)};color:${sc(z.status)};border:1px solid ${sc(z.status)};border-radius:3px;padding:2px 6px;font-size:10pt;font-weight:700">${z.status.toUpperCase()}</span>
       </td>
     </tr>`).join("");
-
-  const anomalyRows = anomalies.slice(0, 20).map((a: FluxuumAnomaly, i: number) => `
-    <tr style="background:${i%2===0?"#fff":"#fafafa"}">
-      <td class="at">${fmtTime(a.time)}</td>
-      <td class="at" style="font-weight:700">${escapeHtml(a.zone)}</td>
-      <td class="at">${escapeHtml(a.recipe??"—")}</td>
-      <td class="at r" style="color:${a.ph1!=null&&(a.ph1<=5.6||a.ph1>=6.3)?"#dc2626":"inherit"}">${a.ph1?.toFixed(2)??"—"}</td>
-      <td class="at r" style="color:${a.ph2!=null&&(a.ph2<=5.6||a.ph2>=6.3)?"#dc2626":"inherit"}">${a.ph2?.toFixed(2)??"—"}</td>
-      <td class="at r" style="color:${a.ec!=null&&(a.ec>=3.5||a.ec<=2.8)?"#d97706":"inherit"}">${a.ec?.toFixed(2)??"—"}</td>
-      <td class="at">${a.reasons.map(r=>escapeHtml(r)).join(" · ")}</td>
-    </tr>`).join("");
-
-  const narrative = aiNarrative ? `
-    <div class="ai-block">
-      <div class="ai-label">AI ANALYSIS · FLUXUUM</div>
-      <div class="ai-text">${escapeHtml(aiNarrative).replace(/\n/g,"<br>").replace(/\*\*(.*?)\*\*/g,"<strong>$1</strong>")}</div>
-    </div>` : "";
 
   return `
     ${zoneBreakdown.length > 0 ? `
@@ -70,16 +53,7 @@ function buildSensorBody(data: FluxuumReport): string {
         <th class="r">FLOW AVG</th><th style="text-align:center">STATUS</th>
       </tr></thead>
       <tbody>${zoneRows}</tbody>
-    </table>` : ""}
-    ${anomalies.length > 0 ? `
-    <div class="section-head" style="margin-top:32px">
-      Anomaly Log — Top ${Math.min(anomalies.length,20)} of ${anomalies.length}
-    </div>
-    <table class="anomaly-table">
-      <thead><tr><th>TIME</th><th>ZONE</th><th>RECIPE</th><th class="r">pH1</th><th class="r">pH2</th><th class="r">EC</th><th>FLAGS</th></tr></thead>
-      <tbody>${anomalyRows}</tbody>
-    </table>` : `<div class="clean-banner">✓ No anomalies in this window — all zones clean.</div>`}
-    ${narrative}`;
+    </table>` : `<div class="clean-banner">✓ No anomalies in this window — all zones clean.</div>`}`;
 }
 
 // ── Cover block for the sensor section ───────────────────────────────────────
@@ -154,36 +128,32 @@ const INCIDENT_CSS = `
   }`;
 
 const SENSOR_CSS = `
-  .sensor-cover{background:#111827;color:#f9fafb;padding:48px 64px 40px}
-  .sc-eyebrow{font-size:13px;letter-spacing:.18em;color:#6b7280;text-transform:uppercase;margin-bottom:12px}
-  .sc-title{font-size:32px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#fff;margin-bottom:6px}
-  .sc-period{font-size:15px;color:#9ca3af;margin-bottom:28px}
-  .sc-stats{display:flex;gap:32px;flex-wrap:wrap;padding-top:20px;border-top:1px solid #374151}
+  .sensor-cover{background:#111827;color:#f9fafb;padding:28px 48px 24px}
+  .sc-eyebrow{font-size:11px;letter-spacing:.18em;color:#6b7280;text-transform:uppercase;margin-bottom:8px}
+  .sc-title{font-size:24px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#fff;margin-bottom:4px}
+  .sc-period{font-size:13px;color:#9ca3af;margin-bottom:16px}
+  .sc-stats{display:flex;gap:20px;flex-wrap:wrap;padding-top:14px;border-top:1px solid #374151}
   .sc-stat{text-align:center}
-  .sc-val{font-size:26px;font-weight:700;color:#7dd3fc}
-  .sc-key{font-size:11px;letter-spacing:.12em;color:#6b7280;margin-top:3px}
-  .sensor-body{padding:40px 64px 80px}
-  .section-head{font-size:13px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#6b7280;border-bottom:1px solid #e5e7eb;padding-bottom:8px;margin-bottom:16px}
-  .zone-table,.anomaly-table{width:100%;border-collapse:collapse;font-size:14px;margin-bottom:8px}
-  .zone-table th,.anomaly-table th{font-size:10px;letter-spacing:.1em;color:#9ca3af;text-align:left;padding:6px 10px;border-bottom:2px solid #e5e7eb;font-weight:700;background:#f9fafb}
-  .zt,.at{padding:9px 10px;border-bottom:1px solid #f3f4f6;font-size:14px;vertical-align:middle}
+  .sc-val{font-size:20px;font-weight:700;color:#7dd3fc}
+  .sc-key{font-size:9px;letter-spacing:.12em;color:#6b7280;margin-top:2px}
+  .sensor-body{padding:24px 48px 48px}
+  .section-head{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#6b7280;border-bottom:1px solid #e5e7eb;padding-bottom:6px;margin-bottom:12px}
+  .zone-table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:8px}
+  .zone-table th{font-size:9px;letter-spacing:.1em;color:#9ca3af;text-align:left;padding:5px 8px;border-bottom:2px solid #e5e7eb;font-weight:700;background:#f9fafb}
+  .zt{padding:7px 8px;border-bottom:1px solid #f3f4f6;font-size:13px;vertical-align:middle}
   .r{text-align:right!important}
-  .clean-banner{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:4px;padding:16px 20px;color:#15803d;font-size:15px;font-weight:700;margin:24px 0}
-  .ai-block{background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:24px 28px;margin-top:32px;page-break-inside:avoid;break-inside:avoid}
-  .ai-label{font-size:11px;font-weight:700;letter-spacing:.14em;color:#64748b;text-transform:uppercase;margin-bottom:14px}
-  .ai-text{font-family:system-ui,-apple-system,'Segoe UI',sans-serif;font-size:16px;color:#1e293b;line-height:1.8;white-space:pre-wrap}
+  .clean-banner{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:4px;padding:12px 16px;color:#15803d;font-size:13px;font-weight:700;margin:16px 0}
   @media print{
-    .sensor-cover{padding:22px 36px 18px}
-    .sc-eyebrow{font-size:11pt}
-    .sc-title{font-size:26pt}
-    .sc-period{font-size:13pt}
-    .sc-stats{gap:20px}
-    .sc-val{font-size:22pt}
-    .sc-key{font-size:10pt}
-    .sensor-body{padding:20px 36px 40px}
-    .zone-table th,.anomaly-table th{font-size:9pt}
-    .zt,.at{font-size:12pt;padding:7px 8px}
-    .ai-text{font-size:14pt}
+    .sensor-cover{padding:16px 32px 14px}
+    .sc-eyebrow{font-size:9pt}
+    .sc-title{font-size:20pt}
+    .sc-period{font-size:11pt}
+    .sc-stats{gap:16px;padding-top:10px}
+    .sc-val{font-size:17pt}
+    .sc-key{font-size:8pt}
+    .sensor-body{padding:16px 32px 32px}
+    .zone-table th{font-size:8pt}
+    .zt{font-size:11pt;padding:6px 7px}
   }`;
 
 function openHtml(html: string): void {
