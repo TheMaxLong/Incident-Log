@@ -31,7 +31,10 @@ function buildSensorBody(data: FluxuumReport): string {
 
   const zoneRows = zoneBreakdown.slice(0, 24).map((z: FluxuumZone) => `
     <tr>
-      <td class="zt">${escapeHtml(z.zone)}</td>
+      <td class="zt">
+        ${escapeHtml(z.zone)}
+        ${z.recipe ? `<div style="font-size:10pt;color:#9ca3af;font-weight:400;margin-top:2px;letter-spacing:.02em">${escapeHtml(z.recipe)}</div>` : ""}
+      </td>
       <td class="zt r">${z.readingCount}</td>
       <td class="zt r" style="color:${z.flaggedCount>0?"#dc2626":"#16a34a"};font-weight:700">${z.flaggedCount}</td>
       <td class="zt r">${z.ph1Avg??"—"}</td>
