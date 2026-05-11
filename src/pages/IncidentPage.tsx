@@ -3,6 +3,14 @@ import type { Session, Incident, FluxuumReport } from "../types";
 import { getIncidents, saveIncident, removeIncident, updateSession } from "../lib/store";
 import { savePhoto, getPhotos, deletePhotos } from "../lib/db";
 import { generateReport, type CompileMode } from "../lib/report";
+import {
+  ensurePersistentStorage,
+  getStorageEstimate,
+  formatBytes,
+  type PersistenceStatus,
+  type StorageEstimate,
+} from "../lib/storage";
+import { ToastStack, useToasts } from "../components/Toasts";
 
 const M = "'JetBrains Mono', 'Courier New', monospace";
 
@@ -163,6 +171,41 @@ export default function IncidentPage({ session, onBack }: Props) {
   const [compiling, setCompiling] = useState(false);
   const [actionError, setActionError] = useState("");
 
+  // ── Storage health (persistence + usage) ─────────────────────────────────
+  const { toasts, push: pushToast, dismiss: dismissToast } = useToasts();
+  const [persistence, setPersistence] = useState<PersistenceStatus | null>(null);
+  const [storageEst, setStorageEst] = useState<StorageEstimate | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const status = await ensurePersistentStorage();
+      if (cancelled) return;
+      setPersistence(status);
+      // Only notify if the request was just made and DENIED — that's the only
+      // actionable case. Silent grant is the happy path; silent skip
+      // (already-persisted from prior session) doesn't need a toast either.
+      if (status.supported && status.requested && !status.persisted) {
+        pushToast(
+          "warn",
+          "Photos may not survive the OS",
+          "Browser didn't grant persistent storage. Open the app a few more times — Chrome usually grants it after repeated use.",
+        );
+      }
+      const est = await getStorageEstimate();
+      if (cancelled) return;
+      setStorageEst(est);
+      if (est && est.usagePct > 85) {
+        pushToast(
+          "warn",
+          "Photo storage almost full",
+          `Using ${formatBytes(est.usageBytes)} of ${formatBytes(est.quotaBytes)} (${est.usagePct.toFixed(0)}%). Archive or delete old sessions to free space.`,
+        );
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [pushToast]);
+
   // ── FLUXUUM integration ──────────────────────────────────────────────────
   const [fluxuumUrl, setFluxuumUrl]       = useState(() => localStorage.getItem("fluxuumApiUrl") ?? "");
   const [fluxuumHours, setFluxuumHours]   = useState<6|12|24|48>(() => {
@@ -208,9 +251,29 @@ export default function IncidentPage({ session, onBack }: Props) {
     const ids = incidents.flatMap(i => i.photoIds);
     if (!ids.length) return;
     getPhotos(ids)
-      .then(p => setPhotoCache(p))
-      .catch(() => setActionError("Could not load one or more saved photos."));
-  }, [incidents]);
+      .then(p => {
+        setPhotoCache(p);
+        // Detect the "came back after hours, my photos got evicted" case:
+        // we had photo IDs saved on incidents but IndexedDB returned fewer
+        // (or empty) blobs. This is the OS-storage-eviction signal.
+        const expected = ids.length;
+        const got = Object.keys(p).length;
+        if (expected > 0 && got < expected) {
+          pushToast(
+            "error",
+            `${expected - got} of ${expected} saved photo${expected === 1 ? "" : "s"} missing`,
+            "Browser storage was cleared while the app was inactive. Re-add them from your photo gallery to restore.",
+          );
+        }
+      })
+      .catch((err) =>
+        pushToast(
+          "error",
+          "Could not load saved photos",
+          err instanceof Error ? err.message : String(err),
+        ),
+      );
+  }, [incidents, pushToast]);
 
   const compress = useCallback((file: File): Promise<PendingPhoto> =>
     new Promise((resolve, reject) => {
@@ -218,17 +281,29 @@ export default function IncidentPage({ session, onBack }: Props) {
       const url = URL.createObjectURL(file);
       img.onload = () => {
         URL.revokeObjectURL(url);
-        const max = 1400;
-        const scale = Math.min(1, max / Math.max(img.width, img.height));
-        const c = document.createElement("canvas");
-        c.width = Math.round(img.width * scale);
-        c.height = Math.round(img.height * scale);
-        c.getContext("2d")!.drawImage(img, 0, 0, c.width, c.height);
-        const dataUrl = c.toDataURL("image/jpeg", 0.82);
-        const id = `ph_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-        resolve({ id, name: file.name, dataUrl });
+        try {
+          const max = 1400;
+          const scale = Math.min(1, max / Math.max(img.width, img.height));
+          const c = document.createElement("canvas");
+          c.width = Math.round(img.width * scale);
+          c.height = Math.round(img.height * scale);
+          const ctx = c.getContext("2d");
+          if (!ctx) {
+            reject(new Error("Canvas not available"));
+            return;
+          }
+          ctx.drawImage(img, 0, 0, c.width, c.height);
+          const dataUrl = c.toDataURL("image/jpeg", 0.82);
+          const id = `ph_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+          resolve({ id, name: file.name, dataUrl });
+        } catch (err) {
+          reject(err instanceof Error ? err : new Error(String(err)));
+        }
       };
-      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Load failed")); };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error(`Browser couldn't decode ${file.type || "image"}`));
+      };
       img.src = url;
     }), []);
 
@@ -239,14 +314,33 @@ export default function IncidentPage({ session, onBack }: Props) {
     const list = Array.from(files).filter(f => f.type.startsWith("image/")).slice(0, slots);
     setActionError("");
     const processed = await Promise.allSettled(list.map(compress));
-    const ok = processed
-      .filter((result): result is PromiseFulfilledResult<PendingPhoto> => result.status === "fulfilled")
-      .map(result => result.value);
-    const failedCount = processed.length - ok.length;
+    const ok: PendingPhoto[] = [];
+    const failures: Array<{ name: string; type: string; size: number; reason: string }> = [];
+    processed.forEach((result, i) => {
+      if (result.status === "fulfilled") {
+        ok.push(result.value);
+      } else {
+        const f = list[i];
+        const reason =
+          result.reason instanceof Error
+            ? result.reason.message
+            : String(result.reason);
+        failures.push({
+          name: f?.name ?? "(unknown)",
+          type: f?.type || "unknown",
+          size: f?.size ?? 0,
+          reason,
+        });
+      }
+    });
     if (ok.length) setPendingPhotos(prev => [...prev, ...ok]);
-    if (failedCount > 0) {
-      setActionError(`${failedCount} photo${failedCount === 1 ? "" : "s"} failed to process.`);
-    }
+    failures.forEach(f =>
+      pushToast(
+        "error",
+        `${f.name} failed to load`,
+        `${f.reason} · ${f.type} · ${formatBytes(f.size)}`,
+      ),
+    );
   };
 
   const startEdit = (incident: Incident) => {
@@ -753,7 +847,67 @@ export default function IncidentPage({ session, onBack }: Props) {
             No incidents logged yet — fill out the form above
           </div>
         )}
+
+        {/* Discreet storage diagnostics — bottom of page, muted */}
+        <StorageBadge persistence={persistence} estimate={storageEst} />
       </div>
+
+      <ToastStack toasts={toasts} onDismiss={dismissToast} />
+    </div>
+  );
+}
+
+function StorageBadge({
+  persistence,
+  estimate,
+}: {
+  persistence: PersistenceStatus | null;
+  estimate: StorageEstimate | null;
+}) {
+  if (!persistence) return null;
+  const dotColor =
+    !persistence.supported
+      ? "#9ca3af"
+      : persistence.persisted
+        ? "#16a34a"
+        : "#f59e0b";
+  const stateLabel =
+    !persistence.supported
+      ? "storage status unknown"
+      : persistence.persisted
+        ? "photos protected from auto-cleanup"
+        : "photos not protected (Chrome will likely grant after more visits)";
+  return (
+    <div
+      style={{
+        marginTop: 24,
+        paddingTop: 12,
+        borderTop: "1px solid #e2e8f0",
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        fontSize: 10,
+        color: "#64748b",
+        fontFamily: "'JetBrains Mono', 'Courier New', monospace",
+        flexWrap: "wrap",
+      }}
+    >
+      <span
+        style={{
+          display: "inline-block",
+          width: 8,
+          height: 8,
+          borderRadius: "50%",
+          background: dotColor,
+        }}
+      />
+      <span>{stateLabel}</span>
+      {estimate && estimate.quotaBytes > 0 && (
+        <span style={{ color: "#94a3b8" }}>
+          · {formatBytes(estimate.usageBytes)} / {formatBytes(estimate.quotaBytes)} used
+          {estimate.usagePct > 0 ? ` (${estimate.usagePct.toFixed(1)}%)` : ""}
+        </span>
+      )}
     </div>
   );
 }
