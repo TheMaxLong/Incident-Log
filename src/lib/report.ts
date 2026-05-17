@@ -161,12 +161,11 @@ const SENSOR_CSS = `
     .zt{font-size:11pt;padding:6px 7px}
   }`;
 
-// Render the given full-document HTML to a PDF file and trigger a download.
-// Bypasses Chrome's print pipeline entirely (Chrome 148+ blocked blob: URL
-// printing). Uses html2canvas + jsPDF, slicing the rendered canvas across A4
-// pages. Photos as data: URLs are handled natively.
-async function downloadAsPdf(html: string, filename: string): Promise<void> {
-  // Extract the <body> contents and <style> blocks from the full document.
+type PdfSection = { html: string; forceNewPage?: boolean };
+
+const RENDER_WIDTH = 794;
+
+async function renderHtmlToCanvas(html: string): Promise<HTMLCanvasElement> {
   const bodyMatch = html.match(/<body[^>]*>([\s\S]*)<\/body>/i);
   const bodyContent = bodyMatch ? bodyMatch[1] : html;
   const styleMatches = html.match(/<style[\s\S]*?<\/style>/gi) || [];
@@ -174,25 +173,19 @@ async function downloadAsPdf(html: string, filename: string): Promise<void> {
   const bodyClassMatch = html.match(/<body[^>]*class="([^"]*)"/i);
   const bodyClass = bodyClassMatch ? bodyClassMatch[1] : "";
 
-  // Hidden render container sized like an A4 page at ~96 DPI.
-  const RENDER_WIDTH = 794;
   const wrapper = document.createElement("div");
   wrapper.style.cssText = `position:fixed;left:-10000px;top:0;width:${RENDER_WIDTH}px;background:#fff;`;
   wrapper.innerHTML = `${styleBlock}<div class="${bodyClass}" style="background:#fff;width:${RENDER_WIDTH}px">${bodyContent.replace(/<script[\s\S]*?<\/script>/gi, "")}</div>`;
   document.body.appendChild(wrapper);
 
   try {
-    // Wait for fonts + images to load before snapshotting.
-    if (document.fonts && document.fonts.ready) {
-      await document.fonts.ready;
-    }
+    if (document.fonts && document.fonts.ready) await document.fonts.ready;
     const imgs = Array.from(wrapper.querySelectorAll("img"));
     await Promise.all(imgs.map(img => img.complete ? Promise.resolve() : new Promise<void>(res => {
       img.onload = () => res();
       img.onerror = () => res();
     })));
-
-    const canvas = await html2canvas(wrapper, {
+    return await html2canvas(wrapper, {
       scale: 2,
       backgroundColor: "#ffffff",
       useCORS: true,
@@ -200,28 +193,60 @@ async function downloadAsPdf(html: string, filename: string): Promise<void> {
       width: RENDER_WIDTH,
       windowWidth: RENDER_WIDTH,
     });
-
-    const pdf = new jsPDF({ orientation: "p", unit: "mm", format: "a4" });
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const pageHeight = pdf.internal.pageSize.getHeight();
-    const imgWidth = pageWidth;
-    const imgHeight = (canvas.height * imgWidth) / canvas.width;
-    const imgData = canvas.toDataURL("image/jpeg", 0.85);
-
-    let heightLeft = imgHeight;
-    let position = 0;
-    pdf.addImage(imgData, "JPEG", 0, position, imgWidth, imgHeight);
-    heightLeft -= pageHeight;
-    while (heightLeft > 0) {
-      position = heightLeft - imgHeight;
-      pdf.addPage();
-      pdf.addImage(imgData, "JPEG", 0, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight;
-    }
-    pdf.save(filename);
   } finally {
     document.body.removeChild(wrapper);
   }
+}
+
+// Pack sections onto A4 pages: each section renders to its own canvas, then
+// places on the current page if it fits, else starts a new page. Avoids
+// slicing through text or photos. Sections taller than a page are sliced
+// (rare — a single incident with many large photos).
+async function downloadAsPdf(sections: PdfSection[], filename: string): Promise<void> {
+  const pdf = new jsPDF({ orientation: "p", unit: "mm", format: "a4" });
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+
+  let currentY = 0;
+  let firstPlacement = true;
+
+  for (const section of sections) {
+    const canvas = await renderHtmlToCanvas(section.html);
+    const sectionHeight = (canvas.height * pageWidth) / canvas.width;
+    const imgData = canvas.toDataURL("image/jpeg", 0.88);
+
+    if (section.forceNewPage && !firstPlacement) {
+      pdf.addPage();
+      currentY = 0;
+    }
+
+    if (sectionHeight <= pageHeight) {
+      if (!firstPlacement && currentY + sectionHeight > pageHeight) {
+        pdf.addPage();
+        currentY = 0;
+      }
+      pdf.addImage(imgData, "JPEG", 0, currentY, pageWidth, sectionHeight);
+      currentY += sectionHeight;
+    } else {
+      if (!firstPlacement && currentY > 0) {
+        pdf.addPage();
+        currentY = 0;
+      }
+      pdf.addImage(imgData, "JPEG", 0, 0, pageWidth, sectionHeight);
+      let heightLeft = sectionHeight - pageHeight;
+      let position = 0;
+      while (heightLeft > 0) {
+        position -= pageHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, "JPEG", 0, position, pageWidth, sectionHeight);
+        heightLeft -= pageHeight;
+      }
+      const spill = sectionHeight - Math.floor(sectionHeight / pageHeight) * pageHeight;
+      currentY = spill < 1 ? pageHeight : spill;
+    }
+    firstPlacement = false;
+  }
+  pdf.save(filename);
 }
 
 function safeFilename(s: string): string {
@@ -279,12 +304,14 @@ export async function generateReport(
   const sensorMeta = mode === "merged" && fluxuumData
     ? `<span>${fluxuumData.overview.totalReadings} sensor readings · ${fluxuumData.period.hours}h window</span>` : "";
 
-  // ── Incident PDF ────────────────────────────────────────────────────────────
-  const incidentDoc = `<!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8">
-<title>Incident Report — ${escapeHtml(sessionName)}</title>
-<style>${INCIDENT_CSS}${mode==="merged"?SENSOR_CSS:""}</style>
-</head><body class="${isLong?"long-report":""}">
+  // ── Incident PDF (per-incident sections so nothing gets sliced mid-content) ─
+  const styleHead = `<style>${INCIDENT_CSS}${mode==="merged"?SENSOR_CSS:""}</style>`;
+  const bodyOpen = `<body class="${isLong?"long-report":""}">`;
+  const sections: PdfSection[] = [];
+
+  // Section 1: cover + first incident (branded header stays attached to incident #1).
+  sections.push({
+    html: `<!DOCTYPE html><html><head>${styleHead}</head>${bodyOpen}
 <div class="page">
   <div class="first-page-block">
     <div class="cover">
@@ -299,15 +326,32 @@ export async function generateReport(
     </div>
     ${first?`<div class="incidents-wrap first-incident-wrap">${first}</div>`:""}
   </div>
-  ${rest?`<div class="incidents-wrap">${rest}</div>`:""}
-  ${mode==="merged"&&fluxuumData
-    ? `${buildSensorCover(fluxuumData,true)}<div class="sensor-body">${buildSensorBody(fluxuumData)}</div>`
-    : ""}
-</div>
-<script>window.onload=()=>{window.print();};<\/script>
-</body></html>`;
+</div></body></html>`,
+  });
 
-  await downloadAsPdf(incidentDoc, `${safeFilename(sessionName)}-incidents.pdf`);
+  // Subsequent incidents — one section each so each one packs onto a page without
+  // getting cut mid-text or mid-photo.
+  for (const block of blocks.slice(1)) {
+    sections.push({
+      html: `<!DOCTYPE html><html><head>${styleHead}</head>${bodyOpen}
+<div class="page"><div class="incidents-wrap">${block}</div></div>
+</body></html>`,
+    });
+  }
+
+  // Sensor analysis (merged mode only): forced onto its own new page.
+  if (mode === "merged" && fluxuumData) {
+    sections.push({
+      forceNewPage: true,
+      html: `<!DOCTYPE html><html><head>${styleHead}</head><body>
+<div class="page">
+  ${buildSensorCover(fluxuumData, true)}
+  <div class="sensor-body">${buildSensorBody(fluxuumData)}</div>
+</div></body></html>`,
+    });
+  }
+
+  await downloadAsPdf(sections, `${safeFilename(sessionName)}-incidents.pdf`);
 
   // ── Separate sensor PDF ─────────────────────────────────────────────────────
   if (mode === "separate" && fluxuumData) {
@@ -330,6 +374,6 @@ export async function generateReport(
 </div>
 <script>window.onload=()=>{window.print();};<\/script>
 </body></html>`;
-    await downloadAsPdf(sensorDoc, `${safeFilename(sessionName)}-sensors.pdf`);
+    await downloadAsPdf([{ html: sensorDoc }], `${safeFilename(sessionName)}-sensors.pdf`);
   }
 }
