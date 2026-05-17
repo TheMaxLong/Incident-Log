@@ -97,12 +97,12 @@ const INCIDENT_CSS = `
   .first-incident-wrap .photo{max-width:437px;max-height:328px}
   .incident{padding:16px 0;border-bottom:1px solid #ebebeb}
   .incident:last-child{border-bottom:none}
-  .inc-number{font-size:14px;font-weight:700;color:#ccc;letter-spacing:.1em;margin-bottom:6px}
+  .inc-number{font-size:19px;font-weight:700;color:#ccc;letter-spacing:.1em;margin-bottom:6px}
   .inc-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;gap:16px}
   .inc-left{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-  .inc-room{font-size:21px;font-weight:700;color:#111}
-  .inc-cat{font-size:14px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#777;background:#f4f4f2;padding:4px 10px;border-radius:2px;white-space:nowrap}
-  .inc-time{font-size:15px;color:#aaa;white-space:nowrap;flex-shrink:0}
+  .inc-room{font-size:26px;font-weight:700;color:#111}
+  .inc-cat{font-size:19px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#777;background:#f4f4f2;padding:4px 10px;border-radius:2px;white-space:nowrap}
+  .inc-time{font-size:20px;color:#aaa;white-space:nowrap;flex-shrink:0}
   .inc-desc{font-size:22px;color:#333;line-height:1.75;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;max-width:580px}
   .photos{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
   .photo-wrap{flex:0 0 auto;page-break-inside:avoid;break-inside:avoid}
