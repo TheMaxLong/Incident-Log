@@ -92,10 +92,10 @@ const INCIDENT_CSS = `
   .cover-title{font-size:35px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;line-height:1.1;margin-bottom:8px;color:#fff}
   .cover-session{font-size:19px;color:#aaa;margin-bottom:6px}
   .cover-meta{font-size:15px;color:#666;margin-top:24px;padding-top:20px;border-top:1px solid #333;display:flex;gap:28px;flex-wrap:wrap}
-  .incidents-wrap{padding:40px 64px 80px}
-  .first-incident-wrap{padding-top:20px}
+  .incidents-wrap{padding:20px 64px 24px}
+  .first-incident-wrap{padding-top:0}
   .first-incident-wrap .photo{max-width:437px;max-height:328px}
-  .incident{padding:28px 0;border-bottom:1px solid #ebebeb}
+  .incident{padding:16px 0;border-bottom:1px solid #ebebeb}
   .incident:last-child{border-bottom:none}
   .inc-number{font-size:14px;font-weight:700;color:#ccc;letter-spacing:.1em;margin-bottom:6px}
   .inc-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;gap:16px}
