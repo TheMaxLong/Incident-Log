@@ -1,4 +1,6 @@
 import type { Incident, FluxuumReport, FluxuumZone } from "../types";
+import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
 
 export type CompileMode = "incidents" | "merged" | "separate";
 
@@ -159,11 +161,71 @@ const SENSOR_CSS = `
     .zt{font-size:11pt;padding:6px 7px}
   }`;
 
-function openHtml(html: string): void {
-  const blob = new Blob([html], { type: "text/html" });
-  const url  = URL.createObjectURL(blob);
-  window.open(url, "_blank");
-  setTimeout(() => URL.revokeObjectURL(url), 15000);
+// Render the given full-document HTML to a PDF file and trigger a download.
+// Bypasses Chrome's print pipeline entirely (Chrome 148+ blocked blob: URL
+// printing). Uses html2canvas + jsPDF, slicing the rendered canvas across A4
+// pages. Photos as data: URLs are handled natively.
+async function downloadAsPdf(html: string, filename: string): Promise<void> {
+  // Extract the <body> contents and <style> blocks from the full document.
+  const bodyMatch = html.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+  const bodyContent = bodyMatch ? bodyMatch[1] : html;
+  const styleMatches = html.match(/<style[\s\S]*?<\/style>/gi) || [];
+  const styleBlock = styleMatches.join("\n");
+  const bodyClassMatch = html.match(/<body[^>]*class="([^"]*)"/i);
+  const bodyClass = bodyClassMatch ? bodyClassMatch[1] : "";
+
+  // Hidden render container sized like an A4 page at ~96 DPI.
+  const RENDER_WIDTH = 794;
+  const wrapper = document.createElement("div");
+  wrapper.style.cssText = `position:fixed;left:-10000px;top:0;width:${RENDER_WIDTH}px;background:#fff;`;
+  wrapper.innerHTML = `${styleBlock}<div class="${bodyClass}" style="background:#fff;width:${RENDER_WIDTH}px">${bodyContent.replace(/<script[\s\S]*?<\/script>/gi, "")}</div>`;
+  document.body.appendChild(wrapper);
+
+  try {
+    // Wait for fonts + images to load before snapshotting.
+    if (document.fonts && document.fonts.ready) {
+      await document.fonts.ready;
+    }
+    const imgs = Array.from(wrapper.querySelectorAll("img"));
+    await Promise.all(imgs.map(img => img.complete ? Promise.resolve() : new Promise<void>(res => {
+      img.onload = () => res();
+      img.onerror = () => res();
+    })));
+
+    const canvas = await html2canvas(wrapper, {
+      scale: 2,
+      backgroundColor: "#ffffff",
+      useCORS: true,
+      logging: false,
+      width: RENDER_WIDTH,
+      windowWidth: RENDER_WIDTH,
+    });
+
+    const pdf = new jsPDF({ orientation: "p", unit: "mm", format: "a4" });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const imgWidth = pageWidth;
+    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+    const imgData = canvas.toDataURL("image/jpeg", 0.85);
+
+    let heightLeft = imgHeight;
+    let position = 0;
+    pdf.addImage(imgData, "JPEG", 0, position, imgWidth, imgHeight);
+    heightLeft -= pageHeight;
+    while (heightLeft > 0) {
+      position = heightLeft - imgHeight;
+      pdf.addPage();
+      pdf.addImage(imgData, "JPEG", 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+    }
+    pdf.save(filename);
+  } finally {
+    document.body.removeChild(wrapper);
+  }
+}
+
+function safeFilename(s: string): string {
+  return s.replace(/[^a-z0-9-_]+/gi, "-").replace(/^-+|-+$/g, "") || "shift-log";
 }
 
 function buildIncidentBlocks(sorted: Incident[], photos: Record<string, string>): string[] {
@@ -189,13 +251,13 @@ function buildIncidentBlocks(sorted: Incident[], photos: Record<string, string>)
 }
 
 // ── Main entry point ──────────────────────────────────────────────────────────
-export function generateReport(
+export async function generateReport(
   incidents: Incident[],
   sessionName: string,
   photos: Record<string, string>,
   mode: CompileMode = "incidents",
   fluxuumData?: FluxuumReport,
-): void {
+): Promise<void> {
   const sorted = [...incidents].sort((a, b) => {
     if (a.urgent && !b.urgent) return -1;
     if (!a.urgent && b.urgent) return 1;
@@ -245,7 +307,7 @@ export function generateReport(
 <script>window.onload=()=>{window.print();};<\/script>
 </body></html>`;
 
-  openHtml(incidentDoc);
+  await downloadAsPdf(incidentDoc, `${safeFilename(sessionName)}-incidents.pdf`);
 
   // ── Separate sensor PDF ─────────────────────────────────────────────────────
   if (mode === "separate" && fluxuumData) {
@@ -268,6 +330,6 @@ export function generateReport(
 </div>
 <script>window.onload=()=>{window.print();};<\/script>
 </body></html>`;
-    setTimeout(() => openHtml(sensorDoc), 800);
+    await downloadAsPdf(sensorDoc, `${safeFilename(sessionName)}-sensors.pdf`);
   }
 }
