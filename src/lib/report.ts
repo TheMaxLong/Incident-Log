@@ -103,7 +103,7 @@ const INCIDENT_CSS = `
   .inc-room{font-size:21px;font-weight:700;color:#111}
   .inc-cat{font-size:14px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#777;background:#f4f4f2;padding:4px 10px;border-radius:2px;white-space:nowrap}
   .inc-time{font-size:15px;color:#aaa;white-space:nowrap;flex-shrink:0}
-  .inc-desc{font-size:18px;color:#333;line-height:1.75;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;max-width:580px}
+  .inc-desc{font-size:22px;color:#333;line-height:1.75;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;max-width:580px}
   .photos{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
   .photo-wrap{flex:0 0 auto;page-break-inside:avoid;break-inside:avoid}
   .photo{max-width:374px;max-height:281px;width:auto;height:auto;object-fit:cover;border-radius:3px;border:1px solid #e5e5e5;display:block}
