@@ -140,17 +140,18 @@ function IncidentCard({
 
 interface Props {
   session: Session;
+  initialDraft?: { description: string; time: string; testMode: boolean };
   onBack: () => void;
 }
 
-export default function IncidentPage({ session, onBack }: Props) {
+export default function IncidentPage({ session, initialDraft, onBack }: Props) {
   const [date, setDate] = useState(nowDate);
-  const [time, setTime] = useState(nowTime);
+  const [time, setTime] = useState(() => initialDraft?.time || nowTime());
   const [building, setBuilding] = useState<Building | "">("");
   const [room, setRoom] = useState("");
   const [category, setCategory] = useState("");
   const [otherText, setOtherText] = useState("");
-  const [desc, setDesc] = useState("");
+  const [desc, setDesc] = useState(() => initialDraft?.description || "");
   const [pendingPhotos, setPendingPhotos] = useState<PendingPhoto[]>([]);
   const [urgent, setUrgent] = useState(false);
 
@@ -503,6 +504,26 @@ export default function IncidentPage({ session, onBack }: Props) {
 
       <div style={{ maxWidth: "600px", margin: "0 auto" }}>
 
+        {initialDraft && initialDraft.testMode && (
+          <div style={{
+            background: "#3a3000", border: "1px solid #ffcc00",
+            color: "#ffcc00", padding: "10px 14px", borderRadius: "4px",
+            marginBottom: "14px", fontSize: "12px", fontFamily: M,
+            fontWeight: "bold",
+          }}>
+            🧪 TEST MODE — Save disabled. Test data, not real incidents.
+          </div>
+        )}
+        {initialDraft && !initialDraft.testMode && (
+          <div style={{
+            background: "#0f1a2e", border: "1px solid #7dd3fc",
+            color: "#7dd3fc", padding: "10px 14px", borderRadius: "4px",
+            marginBottom: "14px", fontSize: "12px", fontFamily: M,
+          }}>
+            📝 Draft from Drift Report — review and save
+          </div>
+        )}
+
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", gap: "12px", borderBottom: "1px solid #1e293b", paddingBottom: "14px", marginBottom: "24px", flexWrap: "wrap" }}>
           <button
@@ -662,8 +683,8 @@ export default function IncidentPage({ session, onBack }: Props) {
           <div style={{ display: "flex", gap: "10px", alignItems: "center", justifyContent: "space-between" }}>
             <button
               onClick={log}
-              disabled={!canLog || logging}
-              style={{ background: canLog && !logging ? "#7dd3fc" : "#1e293b", color: canLog && !logging ? "#0a0a0a" : "#475569", border: "none", borderRadius: "6px", padding: "10px 24px", fontFamily: M, fontSize: "12px", fontWeight: "bold", cursor: canLog && !logging ? "pointer" : "not-allowed", letterSpacing: "0.06em" }}
+              disabled={!canLog || logging || initialDraft?.testMode}
+              style={{ background: canLog && !logging && !initialDraft?.testMode ? "#7dd3fc" : "#1e293b", color: canLog && !logging && !initialDraft?.testMode ? "#0a0a0a" : "#475569", border: "none", borderRadius: "6px", padding: "10px 24px", fontFamily: M, fontSize: "12px", fontWeight: "bold", cursor: canLog && !logging && !initialDraft?.testMode ? "pointer" : "not-allowed", letterSpacing: "0.06em" }}
             >
               {logging ? (isEditing ? "SAVING…" : "LOGGING…") : (isEditing ? "SAVE CHANGES" : "LOG INCIDENT")}
             </button>
@@ -770,7 +791,7 @@ export default function IncidentPage({ session, onBack }: Props) {
                       type="url"
                       value={fluxuumUrl}
                       onChange={e => setFluxuumUrl(e.target.value)}
-                      placeholder="https://your-fluxuum.replit.app"
+                      placeholder="http://anderson-hub:3001"
                       style={{ ...inputStyle, flex: "1", minWidth: "200px", fontSize: "11px" }}
                     />
                     <div style={{ display: "flex", gap: "4px" }}>
