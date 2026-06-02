@@ -14,6 +14,12 @@ import { ToastStack, useToasts } from "../components/Toasts";
 
 const M = "'JetBrains Mono', 'Courier New', monospace";
 
+// FLUXUUM api-server lives on the Anderson hub Pi, reachable over the tailnet
+// via MagicDNS. The bare LAN name (anderson-hub:3001) stopped resolving once
+// the hub moved onto Tailscale, so default to the full tailnet URL. This is
+// the Anderson hub — intentionally NOT the hub-backup mirror.
+const DEFAULT_FLUXUUM_URL = "http://anderson-hub.tailf0f27a.ts.net:3001";
+
 type Building = "AB" | "EF" | "GH";
 
 const ROOMS: Record<Building, string[]> = {
@@ -208,7 +214,7 @@ export default function IncidentPage({ session, initialDraft, onBack }: Props) {
   }, [pushToast]);
 
   // ── FLUXUUM integration ──────────────────────────────────────────────────
-  const [fluxuumUrl, setFluxuumUrl]       = useState(() => localStorage.getItem("fluxuumApiUrl") ?? "");
+  const [fluxuumUrl, setFluxuumUrl]       = useState(() => localStorage.getItem("fluxuumApiUrl") ?? DEFAULT_FLUXUUM_URL);
   const [fluxuumHours, setFluxuumHours]   = useState<6|12|24|48>(() => {
     const saved = localStorage.getItem("fluxuumHours");
     return (saved && [6,12,24,48].includes(Number(saved)) ? Number(saved) : 48) as 6|12|24|48;
@@ -791,7 +797,7 @@ export default function IncidentPage({ session, initialDraft, onBack }: Props) {
                       type="url"
                       value={fluxuumUrl}
                       onChange={e => setFluxuumUrl(e.target.value)}
-                      placeholder="http://anderson-hub:3001"
+                      placeholder={DEFAULT_FLUXUUM_URL}
                       style={{ ...inputStyle, flex: "1", minWidth: "200px", fontSize: "11px" }}
                     />
                     <div style={{ display: "flex", gap: "4px" }}>
