@@ -14,11 +14,13 @@ import { ToastStack, useToasts } from "../components/Toasts";
 
 const M = "'JetBrains Mono', 'Courier New', monospace";
 
-// FLUXUUM api-server lives on the Anderson hub Pi, reachable over the tailnet
-// via MagicDNS. The bare LAN name (anderson-hub:3001) stopped resolving once
-// the hub moved onto Tailscale, so default to the full tailnet URL. This is
-// the Anderson hub — intentionally NOT the hub-backup mirror.
-const DEFAULT_FLUXUUM_URL = "http://anderson-hub.tailf0f27a.ts.net:3001";
+// FLUXUUM api-server lives on the Anderson hub Pi. The Incident Log is served
+// from GitHub Pages over HTTPS, and browsers block an HTTPS page from fetching
+// a plain-HTTP endpoint (mixed content) — so the hub must be reached over
+// HTTPS too. Tailscale `serve` exposes the api over HTTPS on the hub's MagicDNS
+// name (port 443, no :3001). This is the Anderson hub — intentionally NOT the
+// hub-backup mirror.
+const DEFAULT_FLUXUUM_URL = "https://anderson-hub.tailf0f27a.ts.net";
 
 type Building = "AB" | "EF" | "GH";
 
@@ -214,7 +216,17 @@ export default function IncidentPage({ session, initialDraft, onBack }: Props) {
   }, [pushToast]);
 
   // ── FLUXUUM integration ──────────────────────────────────────────────────
-  const [fluxuumUrl, setFluxuumUrl]       = useState(() => localStorage.getItem("fluxuumApiUrl") ?? DEFAULT_FLUXUUM_URL);
+  const [fluxuumUrl, setFluxuumUrl]       = useState(() => {
+    // Migrate stale saved addresses: a blank value or a previously-saved
+    // hub-backup / bare-LAN / plain-HTTP URL won't work from the HTTPS site,
+    // so fall back to the Anderson HTTPS default. Any other custom https URL
+    // the user set is preserved.
+    const saved = localStorage.getItem("fluxuumApiUrl");
+    if (!saved || /hub-backup|anderson-hub:3001|^http:\/\//i.test(saved)) {
+      return DEFAULT_FLUXUUM_URL;
+    }
+    return saved;
+  });
   const [fluxuumHours, setFluxuumHours]   = useState<6|12|24|48>(() => {
     const saved = localStorage.getItem("fluxuumHours");
     return (saved && [6,12,24,48].includes(Number(saved)) ? Number(saved) : 48) as 6|12|24|48;
