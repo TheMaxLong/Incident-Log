@@ -92,21 +92,21 @@ const INCIDENT_CSS = `
   .cover-title{font-size:35px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;line-height:1.1;margin-bottom:8px;color:#fff}
   .cover-session{font-size:19px;color:#aaa;margin-bottom:6px}
   .cover-meta{font-size:15px;color:#666;margin-top:24px;padding-top:20px;border-top:1px solid #333;display:flex;gap:28px;flex-wrap:wrap}
-  .incidents-wrap{padding:14px 64px 16px}
+  .incidents-wrap{padding:20px 64px 24px}
   .first-incident-wrap{padding-top:0}
   .first-incident-wrap .photo{max-width:437px;max-height:328px}
-  .incident{padding:10px 0;border-bottom:1px solid #ebebeb}
+  .incident{padding:16px 0;border-bottom:1px solid #ebebeb}
   .incident:last-child{border-bottom:none}
-  .inc-number{font-size:19px;font-weight:700;color:#ccc;letter-spacing:.1em;margin-bottom:4px}
-  .inc-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:6px;gap:12px}
+  .inc-number{font-size:19px;font-weight:700;color:#ccc;letter-spacing:.1em;margin-bottom:6px}
+  .inc-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;gap:16px}
   .inc-left{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
   .inc-room{font-size:26px;font-weight:700;color:#111}
   .inc-cat{font-size:19px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#777;background:#f4f4f2;padding:4px 10px;border-radius:2px;white-space:nowrap}
   .inc-time{font-size:20px;color:#aaa;white-space:nowrap;flex-shrink:0}
-  .inc-desc{font-size:21px;color:#333;line-height:1.5;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;max-width:620px}
-  .photos{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+  .inc-desc{font-size:23px;color:#333;line-height:1.75;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;max-width:580px}
+  .photos{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
   .photo-wrap{flex:0 0 auto;page-break-inside:avoid;break-inside:avoid}
-  .photo{max-width:320px;max-height:220px;width:auto;height:auto;object-fit:cover;border-radius:3px;border:1px solid #e5e5e5;display:block}
+  .photo{max-width:374px;max-height:281px;width:auto;height:auto;object-fit:cover;border-radius:3px;border:1px solid #e5e5e5;display:block}
   .incident.urgent{border-left:4px solid #dc2626;padding-left:16px;margin-left:-16px}
   .inc-number.urgent-num{color:#dc2626;font-size:13px}
   @media print{
@@ -115,20 +115,20 @@ const INCIDENT_CSS = `
     .cover-title{font-size:28pt;margin-bottom:4px}
     .cover-session{font-size:16pt}
     .cover-meta{font-size:12pt;margin-top:14px;padding-top:12px}
-    .incidents-wrap{padding:12px 36px 20px}
+    .incidents-wrap{padding:20px 36px 40px}
     .first-incident-wrap{padding-top:0;margin-top:0}
     .first-page-block{page-break-inside:auto;break-inside:auto}
     body{font-size:20pt;line-height:1.6}
     .inc-room{font-size:24pt!important}
     .inc-cat{font-size:15pt!important}
     .inc-time{font-size:16pt!important}
-    .inc-desc{font-size:18pt!important;line-height:1.45;orphans:3;widows:3}
+    .inc-desc{font-size:20pt!important;line-height:1.68;orphans:3;widows:3}
     .inc-number{font-size:15pt!important}
     .incident{page-break-inside:auto;break-inside:auto}
     .inc-number,.inc-header{page-break-after:avoid;break-after:avoid-page}
-    .long-report .incidents-wrap:not(.first-incident-wrap){padding:10px 30px 18px}
-    .long-report .incidents-wrap:not(.first-incident-wrap) .incident{padding:10px 0}
-    .long-report .incidents-wrap:not(.first-incident-wrap) .inc-desc{font-size:18pt!important;line-height:1.4}
+    .long-report .incidents-wrap:not(.first-incident-wrap){padding:14px 30px 36px}
+    .long-report .incidents-wrap:not(.first-incident-wrap) .incident{padding:18px 0}
+    .long-report .incidents-wrap:not(.first-incident-wrap) .inc-desc{font-size:20pt!important;line-height:1.58}
     @page{margin:10mm}
   }`;
 
@@ -293,7 +293,9 @@ export async function generateReport(
     month:"short", day:"numeric", year:"numeric", hour:"2-digit", minute:"2-digit",
   });
   const isLong = sorted.length >= 15;
-  const incidentsHtml = buildIncidentBlocks(sorted, photos).join("");
+  const blocks  = buildIncidentBlocks(sorted, photos);
+  const first   = blocks[0] ?? "";
+  const rest    = blocks.slice(1).join("");
 
   const eyebrow = mode === "merged"
     ? "Cultivation Facility — Incident Report + Sensor Analysis"
@@ -302,28 +304,40 @@ export async function generateReport(
   const sensorMeta = mode === "merged" && fluxuumData
     ? `<span>${fluxuumData.overview.totalReadings} sensor readings · ${fluxuumData.period.hours}h window</span>` : "";
 
-  // ── Incident PDF sections ───────────────────────────────────────────────────
+  // ── Incident PDF (per-incident sections so nothing gets sliced mid-content) ─
   const styleHead = `<style>${INCIDENT_CSS}${mode==="merged"?SENSOR_CSS:""}</style>`;
   const bodyOpen = `<body class="${isLong?"long-report":""}">`;
   const sections: PdfSection[] = [];
 
-  // Single flowing section keeps page breaks tight in mobile PDF viewers.
+  // Section 1: cover + first incident (branded header stays attached to incident #1).
   sections.push({
     html: `<!DOCTYPE html><html><head>${styleHead}</head>${bodyOpen}
 <div class="page">
-  <div class="cover">
-    <div class="cover-eyebrow">${eyebrow}</div>
-    <div class="cover-title">Shift Log</div>
-    <div class="cover-session">${escapeHtml(sessionName)}</div>
-    <div class="cover-meta">
-      <span>${sorted.length} incident${sorted.length!==1?"s":""} · chronological order</span>
-      ${sensorMeta}
-      <span>Generated ${generatedAt}</span>
+  <div class="first-page-block">
+    <div class="cover">
+      <div class="cover-eyebrow">${eyebrow}</div>
+      <div class="cover-title">Shift Log</div>
+      <div class="cover-session">${escapeHtml(sessionName)}</div>
+      <div class="cover-meta">
+        <span>${sorted.length} incident${sorted.length!==1?"s":""} · chronological order</span>
+        ${sensorMeta}
+        <span>Generated ${generatedAt}</span>
+      </div>
     </div>
+    ${first?`<div class="incidents-wrap first-incident-wrap">${first}</div>`:""}
   </div>
-  ${incidentsHtml?`<div class="incidents-wrap">${incidentsHtml}</div>`:""}
 </div></body></html>`,
   });
+
+  // Subsequent incidents — one section each so each one packs onto a page without
+  // getting cut mid-text or mid-photo.
+  for (const block of blocks.slice(1)) {
+    sections.push({
+      html: `<!DOCTYPE html><html><head>${styleHead}</head>${bodyOpen}
+<div class="page"><div class="incidents-wrap">${block}</div></div>
+</body></html>`,
+    });
+  }
 
   // Sensor analysis (merged mode only): forced onto its own new page.
   if (mode === "merged" && fluxuumData) {
