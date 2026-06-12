@@ -94,6 +94,7 @@ const INCIDENT_CSS = `
   .cover-meta{font-size:15px;color:#666;margin-top:24px;padding-top:20px;border-top:1px solid #333;display:flex;gap:28px;flex-wrap:wrap}
   .incidents-wrap{padding:20px 64px 24px}
   .first-incident-wrap{padding-top:0}
+  .tail-incidents-wrap{padding-top:8px}
   .first-incident-wrap .photo{max-width:437px;max-height:328px}
   .incident{padding:16px 0;border-bottom:1px solid #ebebeb}
   .incident:last-child{border-bottom:none}
@@ -117,6 +118,7 @@ const INCIDENT_CSS = `
     .cover-meta{font-size:12pt;margin-top:14px;padding-top:12px}
     .incidents-wrap{padding:20px 36px 40px}
     .first-incident-wrap{padding-top:0;margin-top:0}
+    .tail-incidents-wrap{padding-top:10px}
     .first-page-block{page-break-inside:auto;break-inside:auto}
     body{font-size:20pt;line-height:1.6}
     .inc-room{font-size:24pt!important}
@@ -129,7 +131,7 @@ const INCIDENT_CSS = `
     .long-report .incidents-wrap:not(.first-incident-wrap){padding:14px 30px 36px}
     .long-report .incidents-wrap:not(.first-incident-wrap) .incident{padding:18px 0}
     .long-report .incidents-wrap:not(.first-incident-wrap) .inc-desc{font-size:20pt!important;line-height:1.58}
-    @page{margin:10mm}
+    @page{margin:6mm}
   }`;
 
 const SENSOR_CSS = `
@@ -325,19 +327,10 @@ export async function generateReport(
       </div>
     </div>
     ${first?`<div class="incidents-wrap first-incident-wrap">${first}</div>`:""}
+    ${rest?`<div class="incidents-wrap tail-incidents-wrap">${rest}</div>`:""}
   </div>
 </div></body></html>`,
   });
-
-  // Keep remaining incidents in one flowing section to avoid large blank gaps
-  // between incidents in mobile PDF viewers.
-  if (rest) {
-    sections.push({
-      html: `<!DOCTYPE html><html><head>${styleHead}</head>${bodyOpen}
-<div class="page"><div class="incidents-wrap">${rest}</div></div>
-</body></html>`,
-    });
-  }
 
   // Sensor analysis (merged mode only): forced onto its own new page.
   if (mode === "merged" && fluxuumData) {
