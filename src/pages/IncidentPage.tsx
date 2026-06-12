@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import type { Session, Incident, FluxuumReport } from "../types";
 import { getIncidents, saveIncident, removeIncident, updateSession } from "../lib/store";
 import { savePhoto, getPhotos, deletePhotos } from "../lib/db";
-import { generateReport, type CompileMode } from "../lib/report";
+import { generateReport } from "../lib/report";
 import {
   ensurePersistentStorage,
   getStorageEstimate,
@@ -235,7 +235,6 @@ export default function IncidentPage({ session, initialDraft, onBack }: Props) {
   const [fluxuumLoading, setFluxuumLoading] = useState(false);
   const [fluxuumError, setFluxuumError]   = useState<string | null>(null);
   const [showFluxuumPanel, setShowFluxuumPanel] = useState(false);
-  const [compileMode, setCompileMode]     = useState<CompileMode>("incidents");
 
   const fetchFluxuum = async () => {
     let base = fluxuumUrl.trim();
@@ -255,7 +254,6 @@ export default function IncidentPage({ session, initialDraft, onBack }: Props) {
       if (!res.ok) throw new Error(`Server responded ${res.status}`);
       const data: FluxuumReport = await res.json();
       setFluxuumData(data);
-      if (compileMode === "incidents") setCompileMode("merged");
     } catch (err) {
       setFluxuumError(err instanceof Error ? err.message : "Fetch failed — check URL and try again.");
     } finally {
@@ -499,7 +497,7 @@ export default function IncidentPage({ session, initialDraft, onBack }: Props) {
     try {
       const ids = incidents.flatMap(i => i.photoIds);
       const photos = ids.length ? await getPhotos(ids) : {};
-      generateReport(incidents, session.name, photos, compileMode, fluxuumData ?? undefined);
+      generateReport(incidents, session.name, photos, "incidents", fluxuumData ?? undefined);
     } catch {
       setActionError("Could not generate report. Please try again.");
     } finally {
@@ -772,34 +770,7 @@ export default function IncidentPage({ session, initialDraft, onBack }: Props) {
                 </div>
               </div>
 
-              {/* Row 2: compile mode selector (only when fluxuumData loaded) */}
-              {fluxuumData && (
-                <div style={{ marginTop: "12px", paddingTop: "12px", borderTop: "1px solid #1e293b", display: "flex", gap: "6px", flexWrap: "wrap" }}>
-                  <span style={{ color: "#334155", fontSize: "9px", letterSpacing: "0.1em", alignSelf: "center", marginRight: "4px" }}>OUTPUT:</span>
-                  {(["incidents","merged","separate"] as CompileMode[]).map(m => {
-                    const labels: Record<CompileMode, string> = {
-                      incidents: "INCIDENTS ONLY",
-                      merged:    "MERGED PDF",
-                      separate:  "SEPARATE PDFs",
-                    };
-                    return (
-                      <button
-                        key={m}
-                        onClick={() => setCompileMode(m)}
-                        style={{
-                          background: compileMode === m ? "#1e3a5f" : "transparent",
-                          color: compileMode === m ? "#7dd3fc" : "#475569",
-                          border: `1px solid ${compileMode === m ? "#7dd3fc44" : "#1e293b"}`,
-                          borderRadius: "4px", padding: "5px 10px",
-                          fontFamily: M, fontSize: "10px", cursor: "pointer", letterSpacing: "0.04em",
-                        }}
-                      >{labels[m]}</button>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* Row 3: FLUXUUM config panel */}
+              {/* Row 2: FLUXUUM config panel */}
               {showFluxuumPanel && (
                 <div style={{ marginTop: "14px", paddingTop: "14px", borderTop: "1px solid #1e293b" }}>
                   <div style={{ color: "#64748b", fontSize: "9px", letterSpacing: "0.1em", marginBottom: "10px" }}>FLUXUUM CONNECTION</div>
@@ -852,7 +823,7 @@ export default function IncidentPage({ session, initialDraft, onBack }: Props) {
                     </button>
                     {fluxuumData && (
                       <button
-                        onClick={() => { setFluxuumData(null); setCompileMode("incidents"); }}
+                        onClick={() => { setFluxuumData(null); }}
                         style={{ background: "none", border: "none", color: "#475569", fontFamily: M, fontSize: "10px", cursor: "pointer" }}
                       >✕ clear</button>
                     )}
