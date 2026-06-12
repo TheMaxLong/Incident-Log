@@ -94,7 +94,6 @@ const INCIDENT_CSS = `
   .cover-meta{font-size:15px;color:#666;margin-top:24px;padding-top:20px;border-top:1px solid #333;display:flex;gap:28px;flex-wrap:wrap}
   .incidents-wrap{padding:20px 64px 24px}
   .first-incident-wrap{padding-top:0}
-  .tail-incidents-wrap{padding-top:8px}
   .first-incident-wrap .photo{max-width:437px;max-height:328px}
   .incident{padding:16px 0;border-bottom:1px solid #ebebeb}
   .incident:last-child{border-bottom:none}
@@ -118,7 +117,6 @@ const INCIDENT_CSS = `
     .cover-meta{font-size:12pt;margin-top:14px;padding-top:12px}
     .incidents-wrap{padding:20px 36px 40px}
     .first-incident-wrap{padding-top:0;margin-top:0}
-    .tail-incidents-wrap{padding-top:10px}
     .first-page-block{page-break-inside:auto;break-inside:auto}
     body{font-size:20pt;line-height:1.6}
     .inc-room{font-size:24pt!important}
@@ -131,7 +129,7 @@ const INCIDENT_CSS = `
     .long-report .incidents-wrap:not(.first-incident-wrap){padding:14px 30px 36px}
     .long-report .incidents-wrap:not(.first-incident-wrap) .incident{padding:18px 0}
     .long-report .incidents-wrap:not(.first-incident-wrap) .inc-desc{font-size:20pt!important;line-height:1.58}
-    @page{margin:6mm}
+    @page{margin:10mm}
   }`;
 
 const SENSOR_CSS = `
@@ -295,9 +293,7 @@ export async function generateReport(
     month:"short", day:"numeric", year:"numeric", hour:"2-digit", minute:"2-digit",
   });
   const isLong = sorted.length >= 15;
-  const blocks  = buildIncidentBlocks(sorted, photos);
-  const first   = blocks[0] ?? "";
-  const rest    = blocks.slice(1).join("");
+  const incidentsHtml = buildIncidentBlocks(sorted, photos).join("");
 
   const eyebrow = mode === "merged"
     ? "Cultivation Facility — Incident Report + Sensor Analysis"
@@ -311,24 +307,21 @@ export async function generateReport(
   const bodyOpen = `<body class="${isLong?"long-report":""}">`;
   const sections: PdfSection[] = [];
 
-  // Section 1: cover + first incident (branded header stays attached to incident #1).
+  // Single flowing section keeps page breaks tight in mobile PDF viewers.
   sections.push({
     html: `<!DOCTYPE html><html><head>${styleHead}</head>${bodyOpen}
 <div class="page">
-  <div class="first-page-block">
-    <div class="cover">
-      <div class="cover-eyebrow">${eyebrow}</div>
-      <div class="cover-title">Shift Log</div>
-      <div class="cover-session">${escapeHtml(sessionName)}</div>
-      <div class="cover-meta">
-        <span>${sorted.length} incident${sorted.length!==1?"s":""} · chronological order</span>
-        ${sensorMeta}
-        <span>Generated ${generatedAt}</span>
-      </div>
+  <div class="cover">
+    <div class="cover-eyebrow">${eyebrow}</div>
+    <div class="cover-title">Shift Log</div>
+    <div class="cover-session">${escapeHtml(sessionName)}</div>
+    <div class="cover-meta">
+      <span>${sorted.length} incident${sorted.length!==1?"s":""} · chronological order</span>
+      ${sensorMeta}
+      <span>Generated ${generatedAt}</span>
     </div>
-    ${first?`<div class="incidents-wrap first-incident-wrap">${first}</div>`:""}
-    ${rest?`<div class="incidents-wrap tail-incidents-wrap">${rest}</div>`:""}
   </div>
+  ${incidentsHtml?`<div class="incidents-wrap">${incidentsHtml}</div>`:""}
 </div></body></html>`,
   });
 

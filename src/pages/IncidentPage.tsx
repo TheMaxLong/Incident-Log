@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import type { Session, Incident, FluxuumReport } from "../types";
 import { getIncidents, saveIncident, removeIncident, updateSession } from "../lib/store";
 import { savePhoto, getPhotos, deletePhotos } from "../lib/db";
-import { generateReport } from "../lib/report";
+import { generateReport, type CompileMode } from "../lib/report";
 import {
   ensurePersistentStorage,
   getStorageEstimate,
@@ -13,14 +13,6 @@ import {
 import { ToastStack, useToasts } from "../components/Toasts";
 
 const M = "'JetBrains Mono', 'Courier New', monospace";
-
-// FLUXUUM api-server lives on the Anderson hub Pi. The Incident Log is served
-// from GitHub Pages over HTTPS, and browsers block an HTTPS page from fetching
-// a plain-HTTP endpoint (mixed content) — so the hub must be reached over
-// HTTPS too. Tailscale `serve` exposes the api over HTTPS on the hub's MagicDNS
-// name (port 443, no :3001). This is the Anderson hub — intentionally NOT the
-// hub-backup mirror.
-const DEFAULT_FLUXUUM_URL = "https://anderson-hub.tailf0f27a.ts.net";
 
 type Building = "AB" | "EF" | "GH";
 
@@ -216,17 +208,7 @@ export default function IncidentPage({ session, initialDraft, onBack }: Props) {
   }, [pushToast]);
 
   // ── FLUXUUM integration ──────────────────────────────────────────────────
-  const [fluxuumUrl, setFluxuumUrl]       = useState(() => {
-    // Migrate stale saved addresses: a blank value or a previously-saved
-    // hub-backup / bare-LAN / plain-HTTP URL won't work from the HTTPS site,
-    // so fall back to the Anderson HTTPS default. Any other custom https URL
-    // the user set is preserved.
-    const saved = localStorage.getItem("fluxuumApiUrl");
-    if (!saved || /hub-backup|anderson-hub:3001|^http:\/\//i.test(saved)) {
-      return DEFAULT_FLUXUUM_URL;
-    }
-    return saved;
-  });
+  const [fluxuumUrl, setFluxuumUrl]       = useState(() => localStorage.getItem("fluxuumApiUrl") ?? "");
   const [fluxuumHours, setFluxuumHours]   = useState<6|12|24|48>(() => {
     const saved = localStorage.getItem("fluxuumHours");
     return (saved && [6,12,24,48].includes(Number(saved)) ? Number(saved) : 48) as 6|12|24|48;
@@ -235,6 +217,7 @@ export default function IncidentPage({ session, initialDraft, onBack }: Props) {
   const [fluxuumLoading, setFluxuumLoading] = useState(false);
   const [fluxuumError, setFluxuumError]   = useState<string | null>(null);
   const [showFluxuumPanel, setShowFluxuumPanel] = useState(false);
+  const [compileMode, setCompileMode]     = useState<CompileMode>("incidents");
 
   const fetchFluxuum = async () => {
     let base = fluxuumUrl.trim();
@@ -254,6 +237,7 @@ export default function IncidentPage({ session, initialDraft, onBack }: Props) {
       if (!res.ok) throw new Error(`Server responded ${res.status}`);
       const data: FluxuumReport = await res.json();
       setFluxuumData(data);
+      if (compileMode === "incidents") setCompileMode("merged");
     } catch (err) {
       setFluxuumError(err instanceof Error ? err.message : "Fetch failed — check URL and try again.");
     } finally {
@@ -497,7 +481,7 @@ export default function IncidentPage({ session, initialDraft, onBack }: Props) {
     try {
       const ids = incidents.flatMap(i => i.photoIds);
       const photos = ids.length ? await getPhotos(ids) : {};
-      generateReport(incidents, session.name, photos, "incidents", fluxuumData ?? undefined);
+      generateReport(incidents, session.name, photos, compileMode, fluxuumData ?? undefined);
     } catch {
       setActionError("Could not generate report. Please try again.");
     } finally {
@@ -770,7 +754,34 @@ export default function IncidentPage({ session, initialDraft, onBack }: Props) {
                 </div>
               </div>
 
-              {/* Row 2: FLUXUUM config panel */}
+              {/* Row 2: compile mode selector (only when fluxuumData loaded) */}
+              {fluxuumData && (
+                <div style={{ marginTop: "12px", paddingTop: "12px", borderTop: "1px solid #1e293b", display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                  <span style={{ color: "#334155", fontSize: "9px", letterSpacing: "0.1em", alignSelf: "center", marginRight: "4px" }}>OUTPUT:</span>
+                  {(["incidents","merged","separate"] as CompileMode[]).map(m => {
+                    const labels: Record<CompileMode, string> = {
+                      incidents: "INCIDENTS ONLY",
+                      merged:    "MERGED PDF",
+                      separate:  "SEPARATE PDFs",
+                    };
+                    return (
+                      <button
+                        key={m}
+                        onClick={() => setCompileMode(m)}
+                        style={{
+                          background: compileMode === m ? "#1e3a5f" : "transparent",
+                          color: compileMode === m ? "#7dd3fc" : "#475569",
+                          border: `1px solid ${compileMode === m ? "#7dd3fc44" : "#1e293b"}`,
+                          borderRadius: "4px", padding: "5px 10px",
+                          fontFamily: M, fontSize: "10px", cursor: "pointer", letterSpacing: "0.04em",
+                        }}
+                      >{labels[m]}</button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Row 3: FLUXUUM config panel */}
               {showFluxuumPanel && (
                 <div style={{ marginTop: "14px", paddingTop: "14px", borderTop: "1px solid #1e293b" }}>
                   <div style={{ color: "#64748b", fontSize: "9px", letterSpacing: "0.1em", marginBottom: "10px" }}>FLUXUUM CONNECTION</div>
@@ -780,7 +791,7 @@ export default function IncidentPage({ session, initialDraft, onBack }: Props) {
                       type="url"
                       value={fluxuumUrl}
                       onChange={e => setFluxuumUrl(e.target.value)}
-                      placeholder={DEFAULT_FLUXUUM_URL}
+                      placeholder="http://anderson-hub:3001"
                       style={{ ...inputStyle, flex: "1", minWidth: "200px", fontSize: "11px" }}
                     />
                     <div style={{ display: "flex", gap: "4px" }}>
@@ -823,7 +834,7 @@ export default function IncidentPage({ session, initialDraft, onBack }: Props) {
                     </button>
                     {fluxuumData && (
                       <button
-                        onClick={() => { setFluxuumData(null); }}
+                        onClick={() => { setFluxuumData(null); setCompileMode("incidents"); }}
                         style={{ background: "none", border: "none", color: "#475569", fontFamily: M, fontSize: "10px", cursor: "pointer" }}
                       >✕ clear</button>
                     )}
