@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import type { Session, Incident, FluxuumReport } from "../types";
+import type { Session, Incident, FluxuumReport, Priority } from "../types";
 import { getIncidents, saveIncident, removeIncident, updateSession } from "../lib/store";
 import { savePhoto, getPhotos, deletePhotos } from "../lib/db";
 import { generateReport, type CompileMode } from "../lib/report";
@@ -11,6 +11,13 @@ import {
   type StorageEstimate,
 } from "../lib/storage";
 import { ToastStack, useToasts } from "../components/Toasts";
+import {
+  resolvePriority,
+  priorityRank,
+  PRIORITY_LABEL,
+  PRIORITY_UI,
+  PRIORITY_OPTIONS,
+} from "../lib/priority";
 
 const M = "'JetBrains Mono', 'Courier New', monospace";
 
@@ -91,11 +98,14 @@ function IncidentCard({
   onDelete: () => void;
   onEdit: () => void;
 }) {
+  const cardPriority = resolvePriority(incident);
+  const cardTone = cardPriority ? PRIORITY_UI[cardPriority] : null;
+
   return (
     <div style={{
       background: "#0f1117",
-      border: incident.urgent ? "1px solid #7f1d1d" : "1px solid #1e293b",
-      borderLeft: incident.urgent ? "3px solid #dc2626" : "1px solid #1e293b",
+      border: cardTone ? `1px solid ${cardTone.border}` : "1px solid #1e293b",
+      borderLeft: cardTone ? `3px solid ${cardTone.rail}` : "1px solid #1e293b",
       borderRadius: "6px",
       padding: "14px 16px",
     }}>
@@ -107,9 +117,9 @@ function IncidentCard({
           <span style={{ background: "#1e293b", borderRadius: "3px", padding: "2px 8px", fontSize: "9px", color: "#94a3b8", letterSpacing: "0.06em", whiteSpace: "nowrap" }}>
             {incident.category}
           </span>
-          {incident.urgent && (
-            <span style={{ background: "#1a0000", border: "1px solid #7f1d1d", borderRadius: "3px", padding: "2px 7px", fontSize: "9px", color: "#dc2626", letterSpacing: "0.08em", whiteSpace: "nowrap", fontWeight: "700" }}>
-              URGENT **
+          {cardPriority && cardTone && (
+            <span style={{ background: cardTone.bg, border: `1px solid ${cardTone.border}`, borderRadius: "3px", padding: "2px 7px", fontSize: "9px", color: cardTone.fg, letterSpacing: "0.08em", whiteSpace: "nowrap", fontWeight: "700" }}>
+              {PRIORITY_LABEL[cardPriority]}
             </span>
           )}
           {photos.length > 0 && (
@@ -161,14 +171,14 @@ export default function IncidentPage({ session, initialDraft, onBack }: Props) {
   const [otherText, setOtherText] = useState("");
   const [desc, setDesc] = useState(() => initialDraft?.description || "");
   const [pendingPhotos, setPendingPhotos] = useState<PendingPhoto[]>([]);
-  const [urgent, setUrgent] = useState(false);
+  const [priority, setPriority] = useState<Priority>("");
 
   const [editingId, setEditingId] = useState<string | null>(null);
 
   const sortIncidents = (list: Incident[]) =>
     [...list].sort((a, b) => {
-      if (a.urgent && !b.urgent) return -1;
-      if (!a.urgent && b.urgent) return 1;
+      const byRank = priorityRank(resolvePriority(a)) - priorityRank(resolvePriority(b));
+      if (byRank !== 0) return byRank;
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
 
@@ -379,7 +389,7 @@ export default function IncidentPage({ session, initialDraft, onBack }: Props) {
     }
 
     setDesc(incident.description);
-    setUrgent(incident.urgent ?? false);
+    setPriority(resolvePriority(incident));
 
     // Load existing photos into pending so they display in the form
     const existing: PendingPhoto[] = incident.photoIds.map(id => ({
@@ -403,7 +413,7 @@ export default function IncidentPage({ session, initialDraft, onBack }: Props) {
     setOtherText("");
     setDesc("");
     setPendingPhotos([]);
-    setUrgent(false);
+    setPriority("");
     setActionError("");
   };
 
@@ -445,7 +455,8 @@ export default function IncidentPage({ session, initialDraft, onBack }: Props) {
         description: desc.trim(),
         photoIds: pendingPhotos.map(p => p.id),
         createdAt: originalInc?.createdAt ?? new Date().toISOString(),
-        urgent,
+        priority,
+        urgent: priority === "urgent",   // legacy mirror
       };
 
       saveIncident(incident);
@@ -467,7 +478,7 @@ export default function IncidentPage({ session, initialDraft, onBack }: Props) {
         setTime(nowTime());
         setDesc("");
         setPendingPhotos([]);
-        setUrgent(false);
+        setPriority("");
       }
     } catch {
       setActionError("Could not save this incident. Your data is unchanged.");
@@ -698,7 +709,7 @@ export default function IncidentPage({ session, initialDraft, onBack }: Props) {
           </div>
 
           {/* Submit button */}
-          <div style={{ display: "flex", gap: "10px", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", gap: "10px", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
             <button
               onClick={log}
               disabled={!canLog || logging || initialDraft?.testMode}
@@ -706,23 +717,36 @@ export default function IncidentPage({ session, initialDraft, onBack }: Props) {
             >
               {logging ? (isEditing ? "SAVING…" : "LOGGING…") : (isEditing ? "SAVE CHANGES" : "LOG INCIDENT")}
             </button>
-            <button
-              onClick={() => setUrgent(u => !u)}
-              style={{
-                background: urgent ? "#1a0000" : "transparent",
-                color: urgent ? "#dc2626" : "#475569",
-                border: urgent ? "1px solid #dc2626" : "1px solid #334155",
-                borderRadius: "6px",
-                padding: "10px 16px",
-                fontFamily: M,
-                fontSize: "11px",
-                fontWeight: urgent ? "bold" : "normal",
-                cursor: "pointer",
-                letterSpacing: "0.06em",
-              }}
-            >
-              URGENT **
-            </button>
+            {/* Priority — mutually exclusive. Tapping the lit one clears it back
+                to neutral: no button, no colour. */}
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+              {PRIORITY_OPTIONS.map(opt => {
+                const on = priority === opt;
+                const tone = PRIORITY_UI[opt];
+                return (
+                  <button
+                    key={opt}
+                    onClick={() => setPriority(p => (p === opt ? "" : opt))}
+                    aria-pressed={on}
+                    style={{
+                      background: on ? tone.bg : "transparent",
+                      color: on ? tone.fg : "#475569",
+                      border: on ? `1px solid ${tone.fg}` : "1px solid #334155",
+                      borderRadius: "6px",
+                      padding: "10px 14px",
+                      fontFamily: M,
+                      fontSize: "11px",
+                      fontWeight: on ? "bold" : "normal",
+                      cursor: "pointer",
+                      letterSpacing: "0.06em",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {PRIORITY_LABEL[opt]}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
 

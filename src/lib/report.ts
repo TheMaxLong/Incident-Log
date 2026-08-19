@@ -1,4 +1,5 @@
 import type { Incident, FluxuumReport, FluxuumZone } from "../types";
+import { resolvePriority, priorityRank, PRIORITY_LABEL } from "./priority";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 
@@ -107,8 +108,13 @@ const INCIDENT_CSS = `
   .photos{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
   .photo-wrap{flex:0 0 auto;page-break-inside:avoid;break-inside:avoid}
   .photo{max-width:374px;max-height:281px;width:auto;height:auto;object-fit:cover;border-radius:3px;border:1px solid #e5e5e5;display:block}
-  .incident.urgent{border-left:4px solid #dc2626;padding-left:16px;margin-left:-16px}
-  .inc-number.urgent-num{color:#dc2626;font-size:13px}
+  .incident.pri-urgent{border-left:4px solid #dc2626;padding-left:16px;margin-left:-16px}
+  .incident.pri-moderate{border-left:4px solid #b45309;padding-left:16px;margin-left:-16px}
+  .incident.pri-completed{border-left:4px solid #15803d;padding-left:16px;margin-left:-16px}
+  .inc-number.pri-num{font-size:13px}
+  .inc-number.pri-num-urgent{color:#dc2626}
+  .inc-number.pri-num-moderate{color:#b45309}
+  .inc-number.pri-num-completed{color:#15803d}
   @media print{
     .cover{padding:22px 36px 18px}
     .cover-eyebrow{font-size:12pt;margin-bottom:8px}
@@ -259,9 +265,14 @@ function buildIncidentBlocks(sorted: Incident[], photos: Record<string, string>)
     const photoHtml = inc.photoIds
       .map(pid => { const src = toSafeDataImage(photos[pid]); return src ? `<div class="photo-wrap"><img src="${src}" class="photo" alt=""/></div>` : ""; })
       .join("");
+    const pri = resolvePriority(inc);
+    const priClass = pri ? ` pri-${pri}` : "";
+    const numClass = pri ? ` pri-num pri-num-${pri}` : "";
+    const flag = pri === "urgent" ? "⚑ " : "";
+    const priLabel = pri ? ` ${PRIORITY_LABEL[pri]}` : "";
     return `
-      <div class="incident${inc.urgent?" urgent":""}">
-        <div class="inc-number${inc.urgent?" urgent-num":""}">${inc.urgent?"⚑ ":""}#${String(idx+1).padStart(2,"0")}${inc.urgent?" URGENT **":""}</div>
+      <div class="incident${priClass}">
+        <div class="inc-number${numClass}">${flag}#${String(idx+1).padStart(2,"0")}${priLabel}</div>
         <div class="inc-header">
           <div class="inc-left">
             <span class="inc-room">${escapeHtml(room)}</span>
@@ -284,8 +295,8 @@ export async function generateReport(
   fluxuumData?: FluxuumReport,
 ): Promise<void> {
   const sorted = [...incidents].sort((a, b) => {
-    if (a.urgent && !b.urgent) return -1;
-    if (!a.urgent && b.urgent) return 1;
+    const byRank = priorityRank(resolvePriority(a)) - priorityRank(resolvePriority(b));
+    if (byRank !== 0) return byRank;
     return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
   });
 

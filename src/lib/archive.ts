@@ -1,6 +1,7 @@
 import type { Archive, Incident, Session } from "../types";
 import { getSessions, getIncidents, saveSession, saveIncident, updateSession } from "./store";
 import { getAllPhotos, importPhotos } from "./db";
+import { resolvePriority } from "./priority";
 
 function normalizeText(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
@@ -10,7 +11,10 @@ function sessionMergeKey(session: Pick<Session, "name" | "date" | "shift">): str
   return [session.date, session.shift ?? "", normalizeText(session.name)].join("|");
 }
 
-function incidentMergeKey(incident: Pick<Incident, "sessionId" | "date" | "time" | "building" | "room" | "category" | "description" | "urgent">): string {
+// ⛔ The trailing "1"/"0" is deliberately NOT widened to the new priority string.
+// Changing it would give every previously-exported archive a different key, so a
+// re-import would land as duplicates instead of being skipped.
+function incidentMergeKey(incident: Pick<Incident, "sessionId" | "date" | "time" | "building" | "room" | "category" | "description" | "priority" | "urgent">): string {
   return [
     incident.sessionId,
     normalizeText(incident.date),
@@ -19,7 +23,7 @@ function incidentMergeKey(incident: Pick<Incident, "sessionId" | "date" | "time"
     normalizeText(incident.room),
     normalizeText(incident.category),
     normalizeText(incident.description),
-    incident.urgent ? "1" : "0",
+    resolvePriority(incident) === "urgent" ? "1" : "0",
   ].join("|");
 }
 

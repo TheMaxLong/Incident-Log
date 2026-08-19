@@ -7,6 +7,9 @@ export interface Session {
   incidentCount: number;
 }
 
+/** "" = the neutral 4th state: no button lit, no colour. */
+export type Priority = "urgent" | "moderate" | "completed" | "";
+
 export interface Incident {
   id: string;
   sessionId: string;
@@ -18,7 +21,8 @@ export interface Incident {
   description: string;
   photoIds: string[];
   createdAt: string;    // ISO — used for chronological sort
-  urgent?: boolean;
+  priority?: Priority;  // undefined on records written before priorities existed
+  urgent?: boolean;     // legacy mirror — kept in sync, never removed
 }
 
 export interface Archive {
