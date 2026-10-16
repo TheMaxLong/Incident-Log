@@ -3,6 +3,7 @@ import type { Session, Incident, FluxuumReport, Priority } from "../types";
 import { getIncidents, saveIncident, removeIncident, updateSession } from "../lib/store";
 import { savePhoto, getPhotos, deletePhotos } from "../lib/db";
 import { generateReport, type CompileMode } from "../lib/report";
+import { sendToHarvestArchive, describeSend, markUnsent, clearUnsent, ArchiveNotReached } from "../lib/archiveNotes";
 import {
   ensurePersistentStorage,
   getStorageEstimate,
@@ -189,6 +190,7 @@ export default function IncidentPage({ session, initialDraft, onBack }: Props) {
   const [logging, setLogging] = useState(false);
   const [compiling, setCompiling] = useState(false);
   const [actionError, setActionError] = useState("");
+  const [archiveMsg, setArchiveMsg] = useState<{ tone: "pending" | "ok" | "error"; text: string } | null>(null);
 
   // ── Storage health (persistence + usage) ─────────────────────────────────
   const { toasts, push: pushToast, dismiss: dismissToast } = useToasts();
@@ -516,6 +518,24 @@ export default function IncidentPage({ session, initialDraft, onBack }: Props) {
     } finally {
       setCompiling(false);
     }
+    // Harvest Archive notes ride on the same tap. Sent after the PDF, so an archive that
+    // can't be reached never holds up the report. Safe to repeat: matched by entry id.
+    setArchiveMsg({ tone: "pending", text: "SENDING NOTES TO HARVEST ARCHIVE…" });
+    try {
+      const r = await sendToHarvestArchive(session, incidents);
+      clearUnsent(session.id);
+      setArchiveMsg({ tone: "ok", text: describeSend(r) });
+    } catch (err) {
+      markUnsent(session.id);
+      setArchiveMsg({
+        tone: "error",
+        text: err instanceof ArchiveNotReached && err.blocked
+          ? "NOT SENT — Chrome is blocking this app from your local network. Allow it: Chrome › Site settings › Local network access. Saved: it sends once allowed. Report still made."
+          : err instanceof ArchiveNotReached
+          ? "NOT SENT — Harvest Archive not reached (Tailscale off?). Saved: it sends on its own next time the app can reach it. Report still made."
+          : `NOT SENT — ${err instanceof Error ? err.message : "send failed"}. Saved to retry. Report still made.`,
+      });
+    }
   };
 
   const isEditing = editingId !== null;
@@ -795,6 +815,16 @@ export default function IncidentPage({ session, initialDraft, onBack }: Props) {
                   </button>
                 </div>
               </div>
+
+              {/* Harvest Archive notes: result of the send that rides on COMPILE REPORT */}
+              {archiveMsg && (
+                <div style={{
+                  marginTop: "10px", fontSize: "10px", letterSpacing: "0.04em", lineHeight: 1.5,
+                  color: archiveMsg.tone === "error" ? "#f87171" : archiveMsg.tone === "ok" ? "#4ade80" : "#7dd3fc",
+                }}>
+                  {archiveMsg.text}
+                </div>
+              )}
 
               {/* Row 2: compile mode selector (only when fluxuumData loaded) */}
               {fluxuumData && (

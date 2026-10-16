@@ -2,6 +2,8 @@ import { useState, useRef } from "react";
 import type { Session } from "../types";
 import { getSessions, saveSession, deleteSession } from "../lib/store";
 import { downloadArchive, uploadArchive } from "../lib/archive";
+import { useEffect } from "react";
+import { getUnsent, retryUnsent } from "../lib/archiveNotes";
 
 const M = "'JetBrains Mono', 'Courier New', monospace";
 
@@ -39,6 +41,24 @@ export default function SessionsPage({ onSelect }: Props) {
   const [draftShift, setDraftShift] = useState<"S1" | "S2" | "">("");
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState("");
+
+  // Harvest Archive: nights that couldn't be sent (archive not reached — Tailscale off,
+  // usually) go out on their own when the app opens or comes back to the front.
+  // Safe to repeat: the archive matches every entry on its id.
+  const [unsent, setUnsent] = useState(() => getUnsent().length);
+  const [archiveNote, setArchiveNote] = useState("");
+  const sendWaiting = async () => {
+    if (!getUnsent().length) return;
+    const r = await retryUnsent();
+    setUnsent(r.waiting);
+    setArchiveNote(r.sent.length ? `✓ Sent to Harvest Archive: ${r.sent.join(", ")}` : r.error ? `still not reached — ${r.error}` : "");
+  };
+  useEffect(() => {
+    sendWaiting();
+    const onShow = () => { if (document.visibilityState === "visible") sendWaiting(); };
+    document.addEventListener("visibilitychange", onShow);
+    return () => document.removeEventListener("visibilitychange", onShow);
+  }, []);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const create = () => {
@@ -124,6 +144,18 @@ export default function SessionsPage({ onSelect }: Props) {
         {importMsg && (
           <div style={{ color: importMsg.includes("failed") ? "#f87171" : "#4ade80", fontSize: "11px", marginBottom: "14px", padding: "8px 12px", background: "#0f1117", borderRadius: "4px", border: "1px solid #1e293b" }}>
             {importMsg}
+          </div>
+        )}
+
+        {(unsent > 0 || archiveNote) && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", color: unsent ? "#fbbf24" : "#4ade80", fontSize: "11px", marginBottom: "14px", padding: "8px 12px", background: "#0f1117", borderRadius: "4px", border: `1px solid ${unsent ? "#78350f" : "#1e293b"}` }}>
+            <span>
+              {unsent ? `⚠ ${unsent} night${unsent !== 1 ? "s" : ""} waiting to send to Harvest Archive` : archiveNote}
+              {unsent > 0 && archiveNote && <span style={{ color: "#94a3b8" }}> · {archiveNote}</span>}
+            </span>
+            {unsent > 0 && (
+              <button onClick={sendWaiting} style={{ background: "transparent", border: "1px solid #fbbf24", borderRadius: "4px", padding: "5px 10px", color: "#fbbf24", fontFamily: M, fontSize: "10px", fontWeight: "bold", cursor: "pointer", letterSpacing: "0.06em", whiteSpace: "nowrap" }}>SEND NOW</button>
+            )}
           </div>
         )}
 
