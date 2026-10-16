@@ -3,7 +3,7 @@ import type { Session, Incident, FluxuumReport, Priority } from "../types";
 import { getIncidents, saveIncident, removeIncident, updateSession } from "../lib/store";
 import { savePhoto, getPhotos, deletePhotos } from "../lib/db";
 import { generateReport, type CompileMode } from "../lib/report";
-import { sendToHarvestArchive, describeSend } from "../lib/archiveNotes";
+import { sendToHarvestArchive, describeSend, markUnsent, clearUnsent, ArchiveNotReached } from "../lib/archiveNotes";
 import {
   ensurePersistentStorage,
   getStorageEstimate,
@@ -518,15 +518,21 @@ export default function IncidentPage({ session, initialDraft, onBack }: Props) {
     } finally {
       setCompiling(false);
     }
-    // Harvest Archive notes ride on the same tap. Sent after the PDF, so a hub that
+    // Harvest Archive notes ride on the same tap. Sent after the PDF, so an archive that
     // can't be reached never holds up the report. Safe to repeat: matched by entry id.
     setArchiveMsg({ tone: "pending", text: "SENDING NOTES TO HARVEST ARCHIVE…" });
     try {
-      const r = await sendToHarvestArchive(fluxuumUrl, session, incidents);
+      const r = await sendToHarvestArchive(session, incidents);
+      clearUnsent(session.id);
       setArchiveMsg({ tone: "ok", text: describeSend(r) });
     } catch (err) {
-      const why = err instanceof Error ? err.message : "send failed";
-      setArchiveMsg({ tone: "error", text: `HARVEST ARCHIVE NOT REACHED — notes not sent (${why}). Report still made; compile again to retry.` });
+      markUnsent(session.id);
+      setArchiveMsg({
+        tone: "error",
+        text: err instanceof ArchiveNotReached
+          ? "NOT SENT — Harvest Archive not reached (Tailscale off?). Saved: it sends on its own next time the app can reach it. Report still made."
+          : `NOT SENT — ${err instanceof Error ? err.message : "send failed"}. Saved to retry. Report still made.`,
+      });
     }
   };
 
