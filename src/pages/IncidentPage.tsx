@@ -529,7 +529,9 @@ export default function IncidentPage({ session, initialDraft, onBack }: Props) {
       markUnsent(session.id);
       setArchiveMsg({
         tone: "error",
-        text: err instanceof ArchiveNotReached
+        text: err instanceof ArchiveNotReached && err.blocked
+          ? "NOT SENT — Chrome is blocking this app from your local network. Allow it: Chrome › Site settings › Local network access. Saved: it sends once allowed. Report still made."
+          : err instanceof ArchiveNotReached
           ? "NOT SENT — Harvest Archive not reached (Tailscale off?). Saved: it sends on its own next time the app can reach it. Report still made."
           : `NOT SENT — ${err instanceof Error ? err.message : "send failed"}. Saved to retry. Report still made.`,
       });

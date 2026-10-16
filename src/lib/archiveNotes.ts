@@ -30,8 +30,22 @@ export interface ArchiveSendResult {
   total: number;
 }
 
-/** The archive was never reached (no answer at all) — on the phone that is almost always Tailscale off. */
-export class ArchiveNotReached extends Error {}
+/** The archive was never reached (no answer at all) — on the phone that is almost always Tailscale off.
+ *  `blocked` = Chrome's local-network permission is denied for this app, so nothing could leave the phone. */
+export class ArchiveNotReached extends Error {
+  constructor(message: string, public blocked = false) { super(message); }
+}
+
+/** Chrome asks once before a website may reach devices on your own network (the hub, over Tailscale).
+ *  "denied" here means every send — and the FLUXUUM link — is blocked until it is allowed in site settings. */
+async function localNetworkDenied(): Promise<boolean> {
+  try {
+    const p = await navigator.permissions.query({ name: "local-network" as PermissionName });
+    return p.state === "denied";
+  } catch {
+    return false;
+  }
+}
 
 export async function sendToHarvestArchive(session: Session, incidents: Incident[]): Promise<ArchiveSendResult> {
   const ctrl = new AbortController();
@@ -45,6 +59,9 @@ export async function sendToHarvestArchive(session: Session, incidents: Incident
       signal: ctrl.signal,
     });
   } catch {
+    if (await localNetworkDenied()) {
+      throw new ArchiveNotReached("Chrome is blocking this app from your local network", true);
+    }
     throw new ArchiveNotReached("Harvest Archive not reached");
   } finally {
     clearTimeout(timer);
